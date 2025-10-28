@@ -6,6 +6,8 @@ import type {
   TableFieldSchema,
 } from "types/query";
 import { nanoid } from "nanoid";
+import sqlParser from "node-sql-parser";
+import { array_to_json } from "~/utils/changer";
 
 export const action = async ({ request, params }: Route.ActionArgs) => {
   const body = (await request.json()) as QueryRequest;
@@ -26,12 +28,12 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
   switch (request.method) {
     case "POST": {
       response.creationTime = new Date().getTime().toString();
-      console.log(body);
-      const result = dbSession().prepare(body.query).all() as Record<
-        string,
-        number | string
-      >[];
-      console.log(result);
+      const parser = new sqlParser.Parser();
+      let ast = parser.astify(body.query, { database: "BigQuery" });
+      ast = array_to_json(ast);
+      const result = dbSession()
+        .prepare(parser.sqlify(ast, { database: "sqlite" }))
+        .all() as Record<string, number | string>[];
       if (result.length === 0) {
         response.totalRows = "0";
         response.schema = { fields: [] };
