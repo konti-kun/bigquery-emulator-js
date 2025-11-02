@@ -22,11 +22,17 @@ export function parseSchema(schema: string): TableFieldSchema[] {
     currentIndex = nextIndex;
 
     // カンマをスキップ
-    while (currentIndex < trimmedSchema.length && trimmedSchema[currentIndex] === ',') {
+    while (
+      currentIndex < trimmedSchema.length &&
+      trimmedSchema[currentIndex] === ","
+    ) {
       currentIndex++;
     }
     // 空白をスキップ
-    while (currentIndex < trimmedSchema.length && /\s/.test(trimmedSchema[currentIndex])) {
+    while (
+      currentIndex < trimmedSchema.length &&
+      /\s/.test(trimmedSchema[currentIndex])
+    ) {
       currentIndex++;
     }
   }
@@ -63,10 +69,15 @@ function parseField(
   }
 
   // 型情報を解析
-  const { type, mode, fields, maxLength, precision, scale, nextIndex: typeEndIndex } = parseType(
-    schema,
-    index
-  );
+  const {
+    type,
+    mode,
+    fields,
+    maxLength,
+    precision,
+    scale,
+    nextIndex: typeEndIndex,
+  } = parseType(schema, index);
   index = typeEndIndex;
 
   // NOT NULLチェック
@@ -129,7 +140,11 @@ function parseType(
     // <を探す
     if (schema[index] === "<") {
       index++;
-      const { type, fields, nextIndex: innerEndIndex } = parseType(schema, index);
+      const {
+        type,
+        fields,
+        nextIndex: innerEndIndex,
+      } = parseType(schema, index);
 
       // >を探す
       index = innerEndIndex;
@@ -220,7 +235,9 @@ function parseType(
   if (schema[index] === "(") {
     index++;
     // パラメータを取得
-    const paramsMatch = schema.substring(index).match(/^([0-9]+)(?:\s*,\s*([0-9]+))?\)/);
+    const paramsMatch = schema
+      .substring(index)
+      .match(/^([0-9]+)(?:\s*,\s*([0-9]+))?\)/);
     if (paramsMatch) {
       const param1 = paramsMatch[1];
       const param2 = paramsMatch[2];
@@ -258,7 +275,9 @@ export function generateCreateTableSQL(
   fields: TableFieldSchema[]
 ): string {
   const tableName = `\`${projectId}_${datasetId}.${tableId}\``;
-  const fieldDefinitions = fields.map((field) => generateFieldDefinition(field, 1)).join(",\n");
+  const fieldDefinitions = fields
+    .map((field) => generateFieldDefinition(field, 1))
+    .join(",\n");
 
   return `CREATE TABLE ${tableName} (\n${fieldDefinitions}\n);`;
 }
@@ -266,7 +285,10 @@ export function generateCreateTableSQL(
 /**
  * フィールド定義の文字列を生成する
  */
-function generateFieldDefinition(field: TableFieldSchema, indentLevel: number): string {
+function generateFieldDefinition(
+  field: TableFieldSchema,
+  indentLevel: number
+): string {
   const indent = "  ".repeat(indentLevel);
   let fieldDef = `${indent}${field.name} `;
 
@@ -329,6 +351,59 @@ function generateTypeDefinition(field: TableFieldSchema): string {
   return typeDef;
 }
 
-export const createTable = (schema: string) => {
+/**
+ * SQLite互換のCREATE TABLE文を生成する
+ * ARRAYとSTRUCTはJSON型として保存
+ */
+export function generateSQLiteCreateTableSQL(
+  datasetId: string,
+  tableId: string,
+  fields: TableFieldSchema[]
+): string {
+  const tableName = `\`${datasetId}.${tableId}\``;
+  const fieldDefinitions = fields
+    .map((field) => {
+      const fieldName = field.name;
+      let sqliteType = "TEXT"; // デフォルトはTEXT
 
-};
+      // ARRAY型とSTRUCT型はJSON型として保存
+      if (field.mode === "REPEATED" || field.type === "STRUCT") {
+        sqliteType = "JSON";
+      } else {
+        // 基本型をSQLite型にマッピング
+        switch (field.type) {
+          case "INT64":
+          case "INTEGER":
+            sqliteType = "INTEGER";
+            break;
+          case "FLOAT":
+          case "FLOAT64":
+          case "NUMERIC":
+          case "BIGNUMERIC":
+            sqliteType = "REAL";
+            break;
+          case "BOOL":
+          case "BOOLEAN":
+            sqliteType = "INTEGER"; // SQLiteではBOOLEANは0/1として保存
+            break;
+          case "STRING":
+          case "BYTES":
+          case "DATE":
+          case "DATETIME":
+          case "TIME":
+          case "TIMESTAMP":
+          default:
+            sqliteType = "TEXT";
+            break;
+        }
+      }
+
+      // NOT NULL制約
+      const notNull = field.mode === "REQUIRED" ? " NOT NULL" : "";
+
+      return `  ${fieldName} ${sqliteType}${notNull}`;
+    })
+    .join(",\n");
+
+  return `CREATE TABLE ${tableName} (\n${fieldDefinitions}\n);`;
+}

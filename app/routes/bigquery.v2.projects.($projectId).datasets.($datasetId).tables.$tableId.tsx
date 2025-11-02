@@ -25,14 +25,16 @@ const getTable = (
     .prepare(
       "SELECT table_id, dataset_id, project_id, schema, strftime('%s', created_at) * 1000 as created_at, strftime('%s', updated_at) * 1000 as updated_at FROM tables WHERE table_id = ? AND dataset_id = ? AND project_id = ?"
     )
-    .get(tableId, datasetId, projectId) as {
-    table_id: string;
-    dataset_id: string;
-    project_id: string;
-    schema: string;
-    created_at: number;
-    updated_at: number;
-  } | undefined;
+    .get(tableId, datasetId, projectId) as
+    | {
+        table_id: string;
+        dataset_id: string;
+        project_id: string;
+        schema: string;
+        created_at: number;
+        updated_at: number;
+      }
+    | undefined;
 
   if (!table) {
     return new Response(
@@ -77,10 +79,11 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
   const tableId = params.tableId ?? "";
 
   switch (request.method) {
-    case "GET":
     case "POST":
       return getTable(projectId, datasetId, tableId);
     default:
-      return new Response(`Method Not Allowed: ${request.method}`, { status: 405 });
+      return new Response(`Method Not Allowed: ${request.method}`, {
+        status: 405,
+      });
   }
 };
