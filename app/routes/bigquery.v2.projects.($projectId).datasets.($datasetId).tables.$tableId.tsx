@@ -81,6 +81,26 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
   switch (request.method) {
     case "POST":
       return getTable(projectId, datasetId, tableId);
+    case "DELETE": {
+      const result = dbSession()
+        .prepare(
+          "DELETE FROM tables WHERE table_id = ? AND dataset_id = ? AND project_id = ?"
+        )
+        .run(tableId, datasetId, projectId);
+
+      if (result.changes === 0) {
+        return new Response(
+          `Not found: Table ${projectId}:${datasetId}.${tableId}`,
+          {
+            status: 404,
+          }
+        );
+      }
+      dbSession()
+        .prepare("DROP TABLE IF EXISTS `" + `${datasetId}.${tableId}` + "`")
+        .run();
+      return new Response(null, { status: 204 });
+    }
     default:
       return new Response(`Method Not Allowed: ${request.method}`, {
         status: 405,
