@@ -265,24 +265,6 @@ function parseType(
 }
 
 /**
- * TableFieldSchemaの配列からCREATE TABLE文を生成する
- * テーブル名は`projectId_datasetId.tableId`の形式で生成される
- */
-export function generateCreateTableSQL(
-  projectId: string,
-  datasetId: string,
-  tableId: string,
-  fields: TableFieldSchema[]
-): string {
-  const tableName = `\`${projectId}_${datasetId}.${tableId}\``;
-  const fieldDefinitions = fields
-    .map((field) => generateFieldDefinition(field, 1))
-    .join(",\n");
-
-  return `CREATE TABLE ${tableName} (\n${fieldDefinitions}\n);`;
-}
-
-/**
  * フィールド定義の文字列を生成する
  */
 function generateFieldDefinition(

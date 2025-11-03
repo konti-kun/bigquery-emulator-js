@@ -88,9 +88,6 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
     dbSession()
       .prepare(insertSQL)
       .run(...values);
-
-    const result = dbSession().prepare(`SELECT * from ${sqlTableName}`).all();
-    console.log("Current table data:", result);
   }
 
   return Response.json({

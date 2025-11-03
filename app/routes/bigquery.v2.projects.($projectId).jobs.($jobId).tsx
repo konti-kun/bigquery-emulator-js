@@ -7,7 +7,11 @@ import type {
 } from "types/query";
 import { nanoid } from "nanoid";
 import sqlParser from "node-sql-parser";
-import { array_to_json, bigquery_to_sqlite_types } from "~/utils/changer";
+import {
+  array_to_json,
+  bigquery_to_sqlite_types,
+  removeBackticksFromHost,
+} from "~/utils/changer";
 import type { Job } from "types/job";
 
 export function loader({ params }: Route.LoaderArgs) {
@@ -36,18 +40,19 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
       jobResponse.creationTime = new Date().getTime().toString();
       const parser = new sqlParser.Parser();
       const query = (body as any).configuration?.query?.query ?? "";
-      let ast = parser.astify(query, {
+      console.log("Executing query:", removeBackticksFromHost(query));
+      let ast = parser.astify(removeBackticksFromHost(query), {
         database: "BigQuery",
       });
       ast = array_to_json(ast);
       ast = bigquery_to_sqlite_types(ast);
       const sqlQuery = parser.sqlify(ast, { database: "sqlite" });
+      console.log("Converted SQL Query:", sqlQuery);
       const result = dbSession().prepare(sqlQuery).all() as Record<
         string,
         any
       >[];
 
-      console.log("SQL Query:", sqlQuery);
       console.log("Query Result:", result);
 
       if (result.length === 0) {

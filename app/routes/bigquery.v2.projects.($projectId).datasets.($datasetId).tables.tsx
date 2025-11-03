@@ -112,6 +112,7 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
       );
 
       dbSession().exec(createTableSQL);
+      console.log("Created table with SQL:", createTableSQL);
     }
   }
   return response;

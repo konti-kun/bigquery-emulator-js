@@ -1,5 +1,12 @@
 import sqlParser from "node-sql-parser";
 
+// host変数に`が入っているときは削除する
+export const removeBackticksFromHost = (sql: string): string => {
+  return sql.replace(/@`([^`]*)`/g, (match, p1) => {
+    return `@${p1}`;
+  });
+};
+
 // BigQueryの型をSQLite用に変換
 const convertDataType = (dataType: any): any => {
   if (!dataType) return dataType;
@@ -35,6 +42,41 @@ const traverseAndConvertTypes = (node: any): any => {
   // CAST関数の型変換
   if (node.type === "cast" && node.target) {
     node.target = convertDataType(node.target);
+  }
+
+  // TIMESTAMPリテラルを文字列に変換
+  if (node.type === "timestamp") {
+    return {
+      type: "single_quote_string",
+      value: node.value,
+    };
+  }
+
+  // TIMESTAMP_TRUNC関数の処理
+  if (node.type === "function" && node.name) {
+    const funcName = Array.isArray(node.name.name)
+      ? (node.name.name[0]?.value ?? node.name.schema.value)
+      : node.name.name;
+
+    if (
+      typeof funcName === "string" &&
+      funcName.toUpperCase() === "TIMESTAMP_TRUNC"
+    ) {
+      // 2番目の引数（date part）を文字列リテラルに変換
+      if (node.args && node.args.value && node.args.value.length >= 2) {
+        const datePartArg = node.args.value[1];
+        // 識別子の場合は文字列リテラルに変換
+        if (datePartArg.type === "column_ref" && datePartArg.column) {
+          const columnName = Array.isArray(datePartArg.column)
+            ? datePartArg.column[0]?.value || datePartArg.column[0]
+            : datePartArg.column.expr?.value;
+          node.args.value[1] = {
+            type: "single_quote_string",
+            value: columnName,
+          };
+        }
+      }
+    }
   }
 
   // すべてのプロパティを再帰的に処理

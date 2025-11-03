@@ -28,167 +28,197 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
   switch (request.method) {
     case "POST": {
       response.creationTime = new Date().getTime().toString();
-      const parser = new sqlParser.Parser();
-      let ast = parser.astify(body.query, { database: "BigQuery" });
-      ast = array_to_json(ast);
-      ast = bigquery_to_sqlite_types(ast);
-      const sqlQuery = parser.sqlify(ast, { database: "sqlite" });
-      const result = dbSession().prepare(sqlQuery).all() as Record<
-        string,
-        any
-      >[];
+      try {
+        const parser = new sqlParser.Parser();
+        let ast = parser.astify(body.query, { database: "BigQuery" });
+        ast = array_to_json(ast);
+        ast = bigquery_to_sqlite_types(ast);
+        const sqlQuery = parser.sqlify(ast, { database: "sqlite" });
 
-      if (result.length === 0) {
-        response.totalRows = "0";
-        response.schema = { fields: [] };
-        response.rows = [];
-        response.jobComplete = true;
-        response.endTime = new Date().getTime().toString();
-        return response;
-      }
+        console.log("SQL Query:", sqlQuery);
 
-      response.totalRows = result.length.toString();
-      const keys = Object.keys(result[0]);
-      if (keys.length === 0) {
-        return response;
-      }
+        const result = dbSession().prepare(sqlQuery).all() as Record<
+          string,
+          any
+        >[];
 
-      // Try to get table schema info from query
-      let tableSchema: { fields: TableFieldSchema[] } = { fields: [] };
+        console.log("Query Result:", result);
 
-      // Extract table name from query (simple pattern matching)
-      const tableMatch = body.query.match(/FROM\s+`([^`]+)`/i);
+        if (result.length === 0) {
+          response.totalRows = "0";
+          response.schema = { fields: [] };
+          response.rows = [];
+          response.jobComplete = true;
+          response.endTime = new Date().getTime().toString();
+          return response;
+        }
 
-      if (tableMatch) {
-        console.log("Matched table:", tableMatch[1]);
-        const fullTableName = tableMatch[1];
-        const parts = fullTableName.split(".");
+        response.totalRows = result.length.toString();
+        const keys = Object.keys(result[0]);
+        if (keys.length === 0) {
+          return response;
+        }
 
-        if (parts.length === 2) {
-          const [datasetId, tableId] = parts;
+        // Try to get table schema info from query
+        let tableSchema: { fields: TableFieldSchema[] } = { fields: [] };
 
-          const tableInfo = dbSession()
-            .prepare(
-              "SELECT schema FROM tables WHERE table_id = ? AND dataset_id = ?"
-            )
-            .get(tableId, datasetId) as { schema: string } | undefined;
+        // Extract table name from query (simple pattern matching)
+        const tableMatch = body.query.match(/FROM\s+`([^`]+)`/i);
 
-          if (tableInfo) {
-            tableSchema = JSON.parse(tableInfo.schema);
+        if (tableMatch) {
+          console.log("Matched table:", tableMatch[1]);
+          const fullTableName = tableMatch[1];
+          const parts = fullTableName.split(".");
+
+          if (parts.length === 2) {
+            const [datasetId, tableId] = parts;
+
+            const tableInfo = dbSession()
+              .prepare(
+                "SELECT schema FROM tables WHERE table_id = ? AND dataset_id = ?"
+              )
+              .get(tableId, datasetId) as { schema: string } | undefined;
+
+            if (tableInfo) {
+              tableSchema = JSON.parse(tableInfo.schema);
+            }
           }
         }
-      }
 
-      const schema: TableFieldSchema[] = [];
-      const processedResult = result.map((row) => {
-        const processedRow: Record<string, any> = {};
+        const schema: TableFieldSchema[] = [];
+        const processedResult = result.map((row) => {
+          const processedRow: Record<string, any> = {};
 
-        keys.forEach((key) => {
-          let value = row[key];
+          keys.forEach((key) => {
+            let value = row[key];
 
-          // Check if this field is JSON type in the table schema
+            // Check if this field is JSON type in the table schema
+            let fieldSchema: TableFieldSchema | undefined;
+            if (tableSchema) {
+              fieldSchema = tableSchema.fields.find((f) => f.name === key);
+            }
+
+            if (fieldSchema && typeof value === "string") {
+              if (
+                fieldSchema.mode === "REPEATED" ||
+                fieldSchema.type === "STRUCT"
+              ) {
+                try {
+                  value = JSON.parse(value);
+                } catch (e) {
+                  // If parsing fails, keep as string
+                }
+              }
+            }
+
+            processedRow[key] = value;
+          });
+
+          return processedRow;
+        });
+
+        // Build schema
+        keys.forEach((key, index) => {
+          const keyName = isNaN(Number(key)) ? key : `f${index}_`;
+          const value = processedResult[0]?.[key];
+
+          // Use table schema if available
           let fieldSchema: TableFieldSchema | undefined;
           if (tableSchema) {
             fieldSchema = tableSchema.fields.find((f) => f.name === key);
           }
 
-          if (fieldSchema && typeof value === "string") {
-            if (
-              fieldSchema.mode === "REPEATED" ||
-              fieldSchema.type === "STRUCT"
-            ) {
-              try {
-                value = JSON.parse(value);
-              } catch (e) {
-                // If parsing fails, keep as string
-              }
-            }
-          }
-
-          processedRow[key] = value;
-        });
-
-        return processedRow;
-      });
-
-      // Build schema
-      keys.forEach((key, index) => {
-        const keyName = isNaN(Number(key)) ? key : `f${index}_`;
-        const value = processedResult[0]?.[key];
-
-        // Use table schema if available
-        let fieldSchema: TableFieldSchema | undefined;
-        if (tableSchema) {
-          fieldSchema = tableSchema.fields.find((f) => f.name === key);
-        }
-
-        if (fieldSchema) {
-          schema.push(fieldSchema);
-        } else {
-          // Fallback to type inference
-          switch (typeof value) {
-            case "string":
-              schema.push({ name: keyName, type: "STRING", mode: "NULLABLE" });
-              break;
-            case "number":
-              if (Number.isInteger(value)) {
-                schema.push({
-                  name: keyName,
-                  type: "INTEGER",
-                  mode: "NULLABLE",
-                });
-              } else {
-                schema.push({ name: keyName, type: "FLOAT", mode: "NULLABLE" });
-              }
-              break;
-            case "object":
-              if (Array.isArray(value)) {
+          if (fieldSchema) {
+            schema.push(fieldSchema);
+          } else {
+            // Fallback to type inference
+            switch (typeof value) {
+              case "string":
                 schema.push({
                   name: keyName,
                   type: "STRING",
-                  mode: "REPEATED",
-                });
-              } else {
-                schema.push({
-                  name: keyName,
-                  type: "STRUCT",
                   mode: "NULLABLE",
                 });
-              }
-              break;
-            default:
-              schema.push({ name: keyName, type: "STRING", mode: "NULLABLE" });
+                break;
+              case "number":
+                if (Number.isInteger(value)) {
+                  schema.push({
+                    name: keyName,
+                    type: "INTEGER",
+                    mode: "NULLABLE",
+                  });
+                } else {
+                  schema.push({
+                    name: keyName,
+                    type: "FLOAT",
+                    mode: "NULLABLE",
+                  });
+                }
+                break;
+              case "object":
+                if (Array.isArray(value)) {
+                  schema.push({
+                    name: keyName,
+                    type: "STRING",
+                    mode: "REPEATED",
+                  });
+                } else {
+                  schema.push({
+                    name: keyName,
+                    type: "STRUCT",
+                    mode: "NULLABLE",
+                  });
+                }
+                break;
+              default:
+                schema.push({
+                  name: keyName,
+                  type: "STRING",
+                  mode: "NULLABLE",
+                });
+            }
           }
-        }
-      });
+        });
 
-      // Helper function to convert arrays to BigQuery format
-      const convertArrayToBigQueryFormat = (value: any): any => {
-        if (Array.isArray(value)) {
-          return value.map((item) => ({
-            v: convertArrayToBigQueryFormat(item),
-          }));
-        }
-        if (typeof value === "object" && value !== null) {
-          const converted: Record<string, any> = {};
-          for (const [k, v] of Object.entries(value)) {
-            converted[k] = convertArrayToBigQueryFormat(v);
+        // Helper function to convert arrays to BigQuery format
+        const convertArrayToBigQueryFormat = (value: any): any => {
+          if (Array.isArray(value)) {
+            return value.map((item) => ({
+              v: convertArrayToBigQueryFormat(item),
+            }));
           }
-          return converted;
-        }
-        return value;
-      };
+          if (typeof value === "object" && value !== null) {
+            const converted: Record<string, any> = {};
+            for (const [k, v] of Object.entries(value)) {
+              converted[k] = convertArrayToBigQueryFormat(v);
+            }
+            return converted;
+          }
+          return value;
+        };
 
-      response.schema = {
-        fields: schema,
-      };
-      response.rows = processedResult.map((row) => ({
-        f: keys.map((key) => ({
-          v: convertArrayToBigQueryFormat(row[key]),
-        })),
-      }));
-      response.pageToken = "";
-      response.errors = [];
+        response.schema = {
+          fields: schema,
+        };
+        response.rows = processedResult.map((row) => ({
+          f: keys.map((key) => ({
+            v: convertArrayToBigQueryFormat(row[key]),
+          })),
+        }));
+        response.pageToken = "";
+        response.errors = [];
+      } catch (error) {
+        console.error("Query execution error:", error);
+        response.errors = [
+          {
+            reason: "invalidQuery",
+            location: "",
+            debugInfo: "",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        ];
+        response.jobComplete = true;
+      }
     }
   }
   response.endTime = new Date().getTime().toString();
