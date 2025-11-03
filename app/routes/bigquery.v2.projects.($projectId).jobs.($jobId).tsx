@@ -7,7 +7,7 @@ import type {
 } from "types/query";
 import { nanoid } from "nanoid";
 import sqlParser from "node-sql-parser";
-import { array_to_json } from "~/utils/changer";
+import { array_to_json, bigquery_to_sqlite_types } from "~/utils/changer";
 import type { Job } from "types/job";
 
 export function loader({ params }: Route.LoaderArgs) {
@@ -40,6 +40,7 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
         database: "BigQuery",
       });
       ast = array_to_json(ast);
+      ast = bigquery_to_sqlite_types(ast);
       const sqlQuery = parser.sqlify(ast, { database: "sqlite" });
       const result = dbSession().prepare(sqlQuery).all() as Record<
         string,

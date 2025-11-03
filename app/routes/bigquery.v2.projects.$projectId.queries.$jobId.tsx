@@ -7,7 +7,13 @@ import type {
 } from "types/query";
 
 export function loader({ params }: Route.LoaderArgs) {
-  return Response.json({ kind: "bigquery#query", id: params.jobId } as any);
+  const result = dbSession()
+    .prepare("SELECT response FROM jobs WHERE job_id = ?")
+    .get(params.jobId) as { response: any };
+  console.log("job Response", result.response);
+  return Response.json({
+    ...JSON.parse(result.response),
+  } as any);
 }
 
 export const action = async ({ request, params }: Route.ActionArgs) => {
@@ -16,6 +22,6 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
   const result = dbSession()
     .prepare("SELECT response FROM jobs WHERE job_id = ?")
     .get(jobId) as { response: any };
-  console.log(result);
-  return Response.json({ ...result.response });
+  console.log("job Response", result.response);
+  return Response.json({ ...JSON.parse(result.response) });
 };
