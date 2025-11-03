@@ -109,6 +109,15 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
                   // If parsing fails, keep as string
                 }
               }
+              if (["INTEGER", "INT64"].includes(fieldSchema.type)) {
+                value = value.toString();
+              }
+              if (fieldSchema.type === "TIMESTAMP") {
+                const date = new Date(value);
+                if (!isNaN(date.getTime())) {
+                  value = (date.getTime() * 1000).toString();
+                }
+              }
             }
 
             processedRow[key] = value;

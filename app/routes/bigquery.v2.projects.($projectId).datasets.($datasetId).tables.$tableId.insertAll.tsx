@@ -1,5 +1,6 @@
 import type { Route } from "./+types/bigquery.v2.projects.($projectId).datasets.($datasetId).tables.$tableId.insertAll";
 import { dbSession } from "~/utils/db.server";
+import { parseISO, fromUnixTime, isValid } from "date-fns";
 
 type InsertAllRequest = {
   rows: Array<{
@@ -10,6 +11,98 @@ type InsertAllRequest = {
   ignoreUnknownValues?: boolean;
   templateSuffix?: string;
 };
+
+/**
+ * Convert a value to TIMESTAMP format (UTC ISO8601 with timezone)
+ * Accepts: ISO8601 string, BigQuery format string, Unix timestamp (seconds)
+ * Returns: yyyy-MM-ddTHH:mm:ss.SSSZ format
+ */
+function convertToTimestamp(value: any): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  // Handle Unix timestamp (number in seconds)
+  if (typeof value === "number") {
+    const date = fromUnixTime(value);
+    if (!isValid(date)) {
+      return null;
+    }
+    // Use toISOString() to ensure UTC output
+    return date.toISOString();
+  }
+
+  // Handle string formats
+  if (typeof value === "string") {
+    // Convert BigQuery format to ISO8601
+    let isoString = value;
+    if (value.includes(" ") && !value.includes("T")) {
+      // "2023-12-25 10:30:00" -> "2023-12-25T10:30:00"
+      isoString = value.replace(" ", "T");
+    }
+
+    // Ensure UTC timezone
+    if (!isoString.endsWith("Z") && !isoString.includes("+") && !isoString.includes("-", 10)) {
+      isoString += "Z";
+    }
+
+    const date = parseISO(isoString);
+    if (!isValid(date)) {
+      return null;
+    }
+
+    // Use toISOString() to ensure UTC output
+    return date.toISOString();
+  }
+
+  return null;
+}
+
+/**
+ * Convert a value to DATETIME format (no timezone)
+ * Accepts: ISO8601 string, BigQuery format string
+ * Returns: yyyy-MM-ddTHH:mm:ss format
+ */
+function convertToDatetime(value: any): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    // Convert BigQuery format to ISO8601
+    let isoString = value;
+    if (value.includes(" ") && !value.includes("T")) {
+      // "2023-12-25 10:30:00" -> "2023-12-25T10:30:00"
+      isoString = value.replace(" ", "T");
+    }
+
+    // Remove timezone info if present (DATETIME doesn't have timezone)
+    isoString = isoString.replace(/Z$/, "").replace(/[+-]\d{2}:\d{2}$/, "");
+
+    // Validate datetime format with simple regex
+    const datetimeRegex = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/;
+    const match = isoString.match(datetimeRegex);
+
+    if (!match) {
+      return null;
+    }
+
+    const [, year, month, day, hours, minutes, seconds, ms] = match;
+
+    // Build formatted string
+    let formatted = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+
+    // Add milliseconds only if present and non-zero
+    if (ms && parseInt(ms) > 0) {
+      const msStr = ms.padEnd(3, '0').replace(/0+$/, '');
+      formatted += `.${msStr}`;
+    }
+
+    return formatted;
+  }
+
+  return null;
+}
 
 export const action = async ({ request, params }: Route.ActionArgs) => {
   const projectId = params.projectId ?? "dummy-project";
@@ -66,11 +159,22 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
     // Get field names and values
     const fieldNames = schema.fields.map((f: any) => f.name);
     const values = fieldNames.map((name: string) => {
+      const field = schema.fields.find((f: any) => f.name === name);
       const value = rowData[name];
 
       // Handle null/undefined
       if (value === null || value === undefined) {
         return null;
+      }
+
+      // Handle TIMESTAMP type
+      if (field?.type === "TIMESTAMP") {
+        return convertToTimestamp(value);
+      }
+
+      // Handle DATETIME type
+      if (field?.type === "DATETIME") {
+        return convertToDatetime(value);
       }
 
       // Handle arrays and objects (JSON types)

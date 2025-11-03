@@ -149,6 +149,178 @@ describe("tabledata.insertAll", () => {
     });
   });
 
+  describe("timestamp and datetime types", () => {
+    test("insert TIMESTAMP data - ISO8601 string with Z", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_ts", {
+        schema: "id INT64, created_at TIMESTAMP",
+        location: "US",
+      });
+
+      const table = bigQuery.dataset("test_dataset").table("test_table_ts");
+
+      // Insert timestamp data with ISO8601 format
+      await table.insert([
+        { id: 1, created_at: "2023-12-25T10:30:00Z" },
+        { id: 2, created_at: "2023-12-25T15:45:30.123Z" },
+      ]);
+
+      // Query to verify - should be stored as UTC ISO8601
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_ts` ORDER BY id",
+      });
+
+      expect(rows).toEqual([
+        { id: 1, created_at: bigQuery.timestamp("2023-12-25T10:30:00Z") },
+        { id: 2, created_at: bigQuery.timestamp("2023-12-25T15:45:30.123Z") },
+      ]);
+    });
+
+    test("insert TIMESTAMP data - BigQuery format string", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_ts2", {
+        schema: "id INT64, created_at TIMESTAMP",
+        location: "US",
+      });
+
+      const table = bigQuery.dataset("test_dataset").table("test_table_ts2");
+
+      // Insert timestamp data with BigQuery format (space-separated)
+      await table.insert([{ id: 1, created_at: "2023-12-25 10:30:00" }]);
+
+      // Query to verify - should be stored as UTC ISO8601
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_ts2` ORDER BY id",
+      });
+
+      expect(rows).toEqual([
+        { id: 1, created_at: bigQuery.timestamp("2023-12-25T10:30:00.000Z") },
+      ]);
+    });
+
+    test("insert TIMESTAMP data - Unix timestamp number", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_ts3", {
+        schema: "id INT64, created_at TIMESTAMP",
+        location: "US",
+      });
+
+      const table = bigQuery.dataset("test_dataset").table("test_table_ts3");
+
+      // Insert timestamp data as Unix timestamp (seconds since epoch)
+      // 1703500200 = 2023-12-25T10:30:00Z
+      await table.insert([{ id: 1, created_at: 1703500200 }]);
+
+      // Query to verify - should be stored as UTC ISO8601
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_ts3` ORDER BY id",
+      });
+
+      expect(rows).toEqual([
+        { id: 1, created_at: bigQuery.timestamp("2023-12-25T10:30:00.000Z") },
+      ]);
+    });
+
+    test("insert DATETIME data - ISO8601 string without timezone", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_dt", {
+        schema: "id INT64, event_time DATETIME",
+        location: "US",
+      });
+
+      const table = bigQuery.dataset("test_dataset").table("test_table_dt");
+
+      // Insert datetime data
+      await table.insert([
+        { id: 1, event_time: "2023-12-25T10:30:00" },
+        { id: 2, event_time: "2023-12-25T15:45:30.123" },
+      ]);
+
+      // Query to verify - should be stored without timezone
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_dt` ORDER BY id",
+      });
+
+      expect(rows).toEqual([
+        { id: 1, event_time: bigQuery.datetime("2023-12-25T10:30:00") },
+        { id: 2, event_time: bigQuery.datetime("2023-12-25T15:45:30.123") },
+      ]);
+    });
+
+    test("insert DATETIME data - BigQuery format string", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_dt2", {
+        schema: "id INT64, event_time DATETIME",
+        location: "US",
+      });
+
+      const table = bigQuery.dataset("test_dataset").table("test_table_dt2");
+
+      // Insert datetime data with BigQuery format (space-separated)
+      await table.insert([{ id: 1, event_time: "2023-12-25 10:30:00" }]);
+
+      // Query to verify - should be stored without timezone
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_dt2` ORDER BY id",
+      });
+
+      expect(rows).toEqual([
+        { id: 1, event_time: bigQuery.datetime("2023-12-25T10:30:00") },
+      ]);
+    });
+
+    test("insert TIMESTAMP with null value", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_ts_null", {
+        schema: "id INT64, created_at TIMESTAMP",
+        location: "US",
+      });
+
+      const table = bigQuery
+        .dataset("test_dataset")
+        .table("test_table_ts_null");
+
+      // Insert with null timestamp
+      await table.insert([{ id: 1, created_at: null }]);
+
+      // Query to verify
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_ts_null`",
+      });
+
+      expect(rows).toEqual([{ id: 1, created_at: null }]);
+    });
+
+    test("insert DATETIME with null value", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_dt_null", {
+        schema: "id INT64, event_time DATETIME",
+        location: "US",
+      });
+
+      const table = bigQuery
+        .dataset("test_dataset")
+        .table("test_table_dt_null");
+
+      // Insert with null datetime
+      await table.insert([{ id: 1, event_time: null }]);
+
+      // Query to verify
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_dt_null`",
+      });
+
+      expect(rows).toEqual([{ id: 1, event_time: null }]);
+    });
+  });
+
   describe("error cases", () => {
     beforeEach(async () => {
       const bigQuery = getBigQueryClient();
