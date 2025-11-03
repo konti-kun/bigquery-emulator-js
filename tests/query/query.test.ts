@@ -47,4 +47,36 @@ describe("query", () => {
       { some_numbers: "[5,10]" },
     ]);
   });
+
+  test("run query with CAST AS STRING", async () => {
+    const [response1] = await bigQuery.query(
+      "SELECT CAST(123 AS STRING) AS text_value"
+    );
+    expect(response1).toEqual([{ text_value: "123" }]);
+  });
+
+  test("run query with CASE and CAST AS STRING", async () => {
+    const [response1] = await bigQuery.query(
+      dedent`
+      WITH TestData AS (
+        SELECT 1 AS column1 UNION ALL
+        SELECT 2 UNION ALL
+        SELECT NULL
+      )
+      SELECT
+        CASE
+          WHEN column1 IS NULL THEN 'N/A'
+          ELSE CAST(column1 AS STRING)
+        END AS item,
+        COUNT(*) AS count
+      FROM TestData
+      GROUP BY column1
+      ORDER BY item`
+    );
+    expect(response1).toEqual([
+      { item: "1", count: 1 },
+      { item: "2", count: 1 },
+      { item: "N/A", count: 1 },
+    ]);
+  });
 });

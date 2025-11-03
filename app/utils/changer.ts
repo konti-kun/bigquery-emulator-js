@@ -1,5 +1,66 @@
 import sqlParser from "node-sql-parser";
 
+// BigQueryの型をSQLite用に変換
+const convertDataType = (dataType: any): any => {
+  if (!dataType) return dataType;
+
+  // 配列の場合
+  if (Array.isArray(dataType)) {
+    return dataType.map((item) => convertDataType(item));
+  }
+
+  if (typeof dataType === "string") {
+    // STRING -> TEXT
+    if (dataType.toUpperCase() === "STRING") {
+      return "TEXT";
+    }
+    return dataType;
+  }
+
+  // オブジェクト形式の場合
+  if (dataType.dataType) {
+    const upperType = dataType.dataType.toUpperCase();
+    if (upperType === "STRING") {
+      return { ...dataType, dataType: "TEXT" };
+    }
+  }
+
+  return dataType;
+};
+
+// ASTを再帰的に走査して型変換を適用
+const traverseAndConvertTypes = (node: any): any => {
+  if (!node || typeof node !== "object") return node;
+
+  // CAST関数の型変換
+  if (node.type === "cast" && node.target) {
+    node.target = convertDataType(node.target);
+  }
+
+  // すべてのプロパティを再帰的に処理
+  for (const key in node) {
+    if (node.hasOwnProperty(key) && typeof node[key] === "object") {
+      if (Array.isArray(node[key])) {
+        node[key] = node[key].map((item: any) => traverseAndConvertTypes(item));
+      } else {
+        node[key] = traverseAndConvertTypes(node[key]);
+      }
+    }
+  }
+
+  return node;
+};
+
+export const bigquery_to_sqlite_types = (
+  ast: sqlParser.AST | sqlParser.AST[]
+): sqlParser.AST | sqlParser.AST[] => {
+  if (Array.isArray(ast)) {
+    return ast.map(bigquery_to_sqlite_types) as sqlParser.AST[];
+  }
+
+  return traverseAndConvertTypes(ast) as sqlParser.AST;
+};
+
 export const array_to_json = (
   ast: sqlParser.AST | sqlParser.AST[]
 ): sqlParser.AST | sqlParser.AST[] => {
