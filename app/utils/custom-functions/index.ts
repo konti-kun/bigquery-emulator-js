@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { formatTimestamp } from "./formatTimestamp";
 import { timestampTrunc } from "./timestampTrunc";
+import { timestamp } from "./timestamp";
 
 /**
  * Register all BigQuery custom functions to the database
@@ -11,4 +12,7 @@ export function registerCustomFunctions(db: Database): void {
 
   // Register TIMESTAMP_TRUNC custom function
   db.function("TIMESTAMP_TRUNC", { varargs: true }, timestampTrunc);
+
+  // Register TIMESTAMP custom function
+  db.function("TIMESTAMP", { varargs: true }, timestamp);
 }
