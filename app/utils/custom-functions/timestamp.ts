@@ -17,46 +17,34 @@ export function timestamp(...args: any[]): string | null {
 
     const inputStr = String(dateString);
 
-    // Parse the input string to Date object
     let date: Date;
 
     if (timezone) {
-      // When timezone is specified, interpret the input as being in that timezone
-      // and convert to UTC
       const timezoneStr = String(timezone);
 
-      // Normalize the input string format
       let normalizedStr = inputStr;
       if (!normalizedStr.includes("T")) {
-        // Add time component if only date is provided
         if (normalizedStr.length === 10) {
           normalizedStr += " 00:00:00";
         }
-        // Replace space with T for ISO format
         normalizedStr = normalizedStr.replace(" ", "T");
       }
 
-      // Remove 'Z' suffix if present as we're treating it as a local time in the given timezone
       normalizedStr = normalizedStr.replace("Z", "");
 
-      // Parse as local time in the given timezone and convert to UTC
       const localDate = parseISO(normalizedStr);
       date = fromZonedTime(localDate, timezoneStr);
     } else {
-      // When no timezone is specified, treat as UTC
       let normalizedStr = inputStr;
 
-      // Add time component if only date is provided
       if (normalizedStr.length === 10) {
         normalizedStr += " 00:00:00";
       }
 
-      // Normalize to ISO format
       if (!normalizedStr.includes("T")) {
         normalizedStr = normalizedStr.replace(" ", "T");
       }
 
-      // If no 'Z' suffix, add it to indicate UTC
       if (!normalizedStr.endsWith("Z") && !normalizedStr.includes("+")) {
         normalizedStr += "Z";
       }

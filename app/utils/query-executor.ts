@@ -3,6 +3,7 @@ import type { QueryResponse, TableFieldSchema } from "types/query";
 import sqlParser from "node-sql-parser";
 import { array_to_json, bigquery_to_sqlite_types } from "~/utils/changer";
 import type { JobConfigurationQuery } from "types/job";
+import { toZonedTime } from "date-fns-tz";
 
 /**
  * テーブルスキーマをデータベースから取得
@@ -60,9 +61,10 @@ function convertValueByFieldSchema(
 
   // TIMESTAMP の場合はマイクロ秒に変換
   if (fieldSchema.type === "TIMESTAMP") {
-    const date = new Date(value);
-    if (!isNaN(date.getTime())) {
-      return (date.getTime() * 1000).toString();
+    // UTC として処理するため、date-fns-tz を使用
+    const utcDate = toZonedTime(value, "UTC");
+    if (!isNaN(utcDate.getTime())) {
+      return (utcDate.getTime() * 1000).toString();
     }
   }
 
@@ -114,7 +116,13 @@ function buildSchema(
     // フォールバック: 型推論
     switch (typeof value) {
       case "string":
-        schema.push({ name: keyName, type: "STRING", mode: "NULLABLE" });
+        const timestampPattern =
+          /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/;
+        if (timestampPattern.test(value)) {
+          schema.push({ name: keyName, type: "TIMESTAMP", mode: "NULLABLE" });
+        } else {
+          schema.push({ name: keyName, type: "STRING", mode: "NULLABLE" });
+        }
         break;
       case "number":
         if (Number.isInteger(value)) {
@@ -204,11 +212,11 @@ export function executeQuery(
     // テーブルスキーマを取得
     const tableSchema = getTableSchema(query);
 
-    // 結果データを処理
-    const processedResult = processResultRows(result, tableSchema);
-
     // スキーマを構築
-    const schema = buildSchema(keys, processedResult, tableSchema);
+    const schema = buildSchema(keys, result, tableSchema);
+
+    // 結果データを処理
+    const processedResult = processResultRows(result, { fields: schema });
 
     // レスポンスを構築
     jobResponse.schema = { fields: schema };
@@ -231,6 +239,5 @@ export function executeQuery(
     ];
     jobResponse.jobComplete = true;
   }
-
   return jobResponse;
 }

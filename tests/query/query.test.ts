@@ -15,7 +15,7 @@ describe("query", () => {
     });
   });
 
-  test("run query", async () => {
+  test("run simple query", async () => {
     const [response] = await bigQuery.query("SELECT 1");
     expect(response).toEqual([{ f0_: 1 }]);
     const [response2] = await bigQuery.query("SELECT 'hello' as greeting");
@@ -153,14 +153,13 @@ describe("query", () => {
     expect(response5).toEqual([{ truncated_year: "2023-01-01 00:00:00" }]);
   });
 
-  // Skip these tests for now as the TIMESTAMP function is not yet implemented
-  describe.skip("TIMESTAMP function", () => {
+  describe("TIMESTAMP function", () => {
     test("run query with TIMESTAMP function from string", async () => {
       const [response1] = await bigQuery.query(
-        "SELECT TIMESTAMP('2023-12-25 10:30:45') AS ts"
+        "SELECT TIMESTAMP('2023-12-25 10:30:45+00:00') AS ts"
       );
       expect(response1).toEqual([
-        { ts: bigQuery.timestamp("2023-12-25 10:30:45") },
+        { ts: bigQuery.timestamp("2023-12-25 10:30:45+00:00") },
       ]);
     });
 
@@ -168,22 +167,27 @@ describe("query", () => {
       const [response2] = await bigQuery.query(
         "SELECT TIMESTAMP('2023-12-25') AS ts"
       );
-      expect(response2).toEqual([{ ts: "2023-12-25 00:00:00" }]);
+      expect(response2).toEqual([
+        { ts: bigQuery.timestamp("2023-12-25 00:00:00+00:00") },
+      ]);
     });
 
     test("run query with TIMESTAMP function with timezone", async () => {
       const [response3] = await bigQuery.query(
         "SELECT TIMESTAMP('2023-12-25 10:30:45', 'Asia/Tokyo') AS ts"
       );
-      // JST 10:30:45 = UTC 01:30:45
-      expect(response3).toEqual([{ ts: "2023-12-25 01:30:45" }]);
+      expect(response3).toEqual([
+        { ts: bigQuery.timestamp("2023-12-25 01:30:45+00:00") },
+      ]);
     });
 
     test("run query with TIMESTAMP function with ISO 8601 format", async () => {
       const [response4] = await bigQuery.query(
         "SELECT TIMESTAMP('2023-12-25T10:30:45Z') AS ts"
       );
-      expect(response4).toEqual([{ ts: "2023-12-25 10:30:45" }]);
+      expect(response4).toEqual([
+        { ts: bigQuery.timestamp("2023-12-25T10:30:45Z") },
+      ]);
     });
   });
 });
