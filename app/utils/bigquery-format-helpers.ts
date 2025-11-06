@@ -19,6 +19,7 @@ export function convertBigQueryFormatToDateFns(bigQueryFormat: string): string {
   result = result.replace(/%H/g, "HH");
   result = result.replace(/%M/g, "mm");
   result = result.replace(/%S/g, "ss");
+  result = result.replace(/T/g, "\'T\'");
 
   return result;
 }

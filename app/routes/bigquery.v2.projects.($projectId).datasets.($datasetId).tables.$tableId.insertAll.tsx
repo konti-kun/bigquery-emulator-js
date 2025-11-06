@@ -1,6 +1,7 @@
 import type { Route } from "./+types/bigquery.v2.projects.($projectId).datasets.($datasetId).tables.$tableId.insertAll";
 import { dbSession } from "~/utils/db.server";
 import { parseISO, fromUnixTime, isValid } from "date-fns";
+import { format, formatInTimeZone } from "date-fns-tz";
 
 type InsertAllRequest = {
   rows: Array<{
@@ -31,7 +32,6 @@ function convertToTimestamp(value: any): string | null {
     // Use toISOString() to ensure UTC output
     return date.toISOString();
   }
-
   // Handle string formats
   if (typeof value === "string") {
     // Convert BigQuery format to ISO8601
@@ -42,17 +42,19 @@ function convertToTimestamp(value: any): string | null {
     }
 
     // Ensure UTC timezone
-    if (!isoString.endsWith("Z") && !isoString.includes("+") && !isoString.includes("-", 10)) {
+    if (
+      !isoString.endsWith("Z") &&
+      !isoString.includes("+") &&
+      !isoString.includes("-", 10)
+    ) {
       isoString += "Z";
     }
 
-    const date = parseISO(isoString);
-    if (!isValid(date)) {
+    const utcDate = parseISO(isoString);
+    if (!isValid(utcDate)) {
       return null;
     }
-
-    // Use toISOString() to ensure UTC output
-    return date.toISOString();
+    return formatInTimeZone(utcDate, "UTC", "yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
   }
 
   return null;
@@ -80,7 +82,8 @@ function convertToDatetime(value: any): string | null {
     isoString = isoString.replace(/Z$/, "").replace(/[+-]\d{2}:\d{2}$/, "");
 
     // Validate datetime format with simple regex
-    const datetimeRegex = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/;
+    const datetimeRegex =
+      /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/;
     const match = isoString.match(datetimeRegex);
 
     if (!match) {
@@ -94,7 +97,7 @@ function convertToDatetime(value: any): string | null {
 
     // Add milliseconds only if present and non-zero
     if (ms && parseInt(ms) > 0) {
-      const msStr = ms.padEnd(3, '0').replace(/0+$/, '');
+      const msStr = ms.padEnd(3, "0").replace(/0+$/, "");
       formatted += `.${msStr}`;
     }
 

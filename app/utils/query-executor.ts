@@ -3,7 +3,7 @@ import type { QueryResponse, TableFieldSchema } from "types/query";
 import sqlParser from "node-sql-parser";
 import { array_to_json, bigquery_to_sqlite_types } from "~/utils/changer";
 import type { JobConfigurationQuery } from "types/job";
-import { toZonedTime } from "date-fns-tz";
+import { parseISO } from "date-fns";
 
 /**
  * テーブルスキーマをデータベースから取得
@@ -61,10 +61,9 @@ function convertValueByFieldSchema(
 
   // TIMESTAMP の場合はマイクロ秒に変換
   if (fieldSchema.type === "TIMESTAMP") {
-    // UTC として処理するため、date-fns-tz を使用
-    const utcDate = toZonedTime(value, "UTC");
-    if (!isNaN(utcDate.getTime())) {
-      return (utcDate.getTime() * 1000).toString();
+    const date = parseISO(value.replace(" ", "T").replace("+00:00", "Z"));
+    if (!isNaN(date.getTime())) {
+      return (date.getTime() * 1000).toString();
     }
   }
 
@@ -98,7 +97,8 @@ function processResultRows(
 function buildSchema(
   keys: string[],
   processedResult: Record<string, any>[],
-  tableSchema: { fields: TableFieldSchema[] }
+  tableSchema: { fields: TableFieldSchema[] },
+  ast: any
 ): TableFieldSchema[] {
   const schema: TableFieldSchema[] = [];
 
@@ -106,19 +106,22 @@ function buildSchema(
     const keyName = isNaN(Number(key)) ? key : `f${index}_`;
     const value = processedResult[0]?.[key];
 
+    const column = ast?.columns?.find(
+      (c: any) => c.as === keyName || c.as?.value === keyName
+    );
     // テーブルスキーマが利用可能な場合はそれを使用
     const fieldSchema = tableSchema.fields.find((f) => f.name === key);
-    if (fieldSchema) {
+    if (fieldSchema && (!column || column.expr.type === "column_ref")) {
       schema.push(fieldSchema);
       return;
     }
-
     // フォールバック: 型推論
     switch (typeof value) {
       case "string":
-        const timestampPattern =
-          /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/;
-        if (timestampPattern.test(value)) {
+        const isTimestamp =
+          column?.expr?.type === "function" &&
+          column?.expr?.name.schema.value.toUpperCase() === "TIMESTAMP";
+        if (isTimestamp) {
           schema.push({ name: keyName, type: "TIMESTAMP", mode: "NULLABLE" });
         } else {
           schema.push({ name: keyName, type: "STRING", mode: "NULLABLE" });
@@ -213,7 +216,7 @@ export function executeQuery(
     const tableSchema = getTableSchema(query);
 
     // スキーマを構築
-    const schema = buildSchema(keys, result, tableSchema);
+    const schema = buildSchema(keys, result, tableSchema, ast);
 
     // 結果データを処理
     const processedResult = processResultRows(result, { fields: schema });

@@ -1,5 +1,5 @@
 import { format, parseISO } from "date-fns";
-import { fromZonedTime } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 
 /**
  * TIMESTAMP custom function for BigQuery emulator
@@ -52,9 +52,13 @@ export function timestamp(...args: any[]): string | null {
       date = parseISO(normalizedStr);
     }
 
-    // Format as 'YYYY-MM-DD HH:MM:SS' (BigQuery TIMESTAMP format in UTC)
-    const result = format(date, "yyyy-MM-dd HH:mm:ss+00:00");
-    console.log("TIMESTAMP function result:", result);
+    // Format as 'YYYY-MM-DD HH:MM:SS.SSSXXX' (BigQuery TIMESTAMP format in UTC)
+    const result = formatInTimeZone(
+      date,
+      "UTC",
+      "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
+    );
+    console.log("TIMESTAMP result:", result);
     return result;
   } catch (error) {
     console.error("TIMESTAMP error:", error);
