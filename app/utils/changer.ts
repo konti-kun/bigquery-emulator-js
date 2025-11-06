@@ -139,3 +139,119 @@ export const array_to_json = (
   }
   return ast;
 };
+
+// UNNESTをSQLiteのjson_each()に変換（文字列置換方式）
+export const unnest_to_json_each = (sql: string): string => {
+  // 変換するエイリアスを記録
+  const aliasMap = new Map<string, boolean>(); // alias -> hasOffset
+
+  // パターン1: UNNEST([...]) AS alias WITH OFFSET
+  sql = sql.replace(
+    /UNNEST\s*\(\s*\[([^\]]+)\]\s*\)\s+AS\s+(\w+)\s+WITH\s+OFFSET/gi,
+    (_match, arrayContent, alias) => {
+      aliasMap.set(alias, true);
+      return `json_each(json_array(${arrayContent})) AS ${alias}_table`;
+    }
+  );
+
+  // パターン2: UNNEST([...]) AS alias (WITH OFFSETなし)
+  sql = sql.replace(
+    /UNNEST\s*\(\s*\[([^\]]+)\]\s*\)\s+AS\s+(\w+)(?!\s+WITH\s+OFFSET)/gi,
+    (_match, arrayContent, alias) => {
+      aliasMap.set(alias, false);
+      return `json_each(json_array(${arrayContent})) AS ${alias}_table`;
+    }
+  );
+
+  // パターン3: UNNEST(column_name) AS alias WITH OFFSET (テーブルカラム)
+  sql = sql.replace(
+    /UNNEST\s*\(\s*(\w+(?:\.\w+)?)\s*\)\s+AS\s+(\w+)\s+WITH\s+OFFSET/gi,
+    (_match, columnName, alias) => {
+      aliasMap.set(alias, true);
+      return `json_each(${columnName}) AS ${alias}_table`;
+    }
+  );
+
+  // パターン4: UNNEST(column_name) AS alias (テーブルカラム、WITH OFFSETなし)
+  sql = sql.replace(
+    /UNNEST\s*\(\s*(\w+(?:\.\w+)?)\s*\)\s+AS\s+(\w+)(?!\s+WITH\s+OFFSET)/gi,
+    (_match, columnName, alias) => {
+      aliasMap.set(alias, false);
+      return `json_each(${columnName}) AS ${alias}_table`;
+    }
+  );
+
+  // パターン5: UNNEST(@param) AS alias WITH OFFSET (パラメータ、WITH OFFSETあり)
+  sql = sql.replace(
+    /UNNEST\s*\(\s*(@\w+)\s*\)\s+AS\s+(\w+)\s+WITH\s+OFFSET/gi,
+    (_match, paramName, alias) => {
+      aliasMap.set(alias, true);
+      return `json_each(${paramName}) AS ${alias}_table`;
+    }
+  );
+
+  // パターン6: UNNEST(@param) AS alias (パラメータ、WITH OFFSETなし)
+  sql = sql.replace(
+    /UNNEST\s*\(\s*(@\w+)\s*\)\s+AS\s+(\w+)(?!\s+WITH\s+OFFSET)/gi,
+    (_match, paramName, alias) => {
+      aliasMap.set(alias, false);
+      return `json_each(${paramName}) AS ${alias}_table`;
+    }
+  );
+
+  // パターン7: IN UNNEST(...) (WHERE句での使用)
+  // IN UNNEST([...]) -> IN (SELECT value FROM json_each(json_array(...)))
+  sql = sql.replace(
+    /\bIN\s+UNNEST\s*\(\s*\[([^\]]+)\]\s*\)/gi,
+    (_match, arrayContent) => {
+      return `IN (SELECT value FROM json_each(json_array(${arrayContent})))`;
+    }
+  );
+
+  // パターン8: IN UNNEST(param) (パラメータを使ったWHERE句)
+  // IN UNNEST(@param) -> IN (SELECT value FROM json_each(@param))
+  sql = sql.replace(
+    /\bIN\s+UNNEST\s*\(\s*(@\w+)\s*\)/gi,
+    (_match, paramName) => {
+      return `IN (SELECT value FROM json_each(${paramName}))`;
+    }
+  );
+
+  // UNNESTが見つからなかった場合は何もしない
+  if (aliasMap.size === 0) {
+    return sql;
+  }
+
+  // パターン9: `, json_each(...)` -> `CROSS JOIN json_each(...)`
+  sql = sql.replace(/,\s*json_each/gi, " CROSS JOIN json_each");
+
+  // SELECT * の場合、明示的なカラムリストに置換
+  const hasSelectStar = /SELECT\s+\*/i.test(sql);
+  if (hasSelectStar) {
+    const columns: string[] = [];
+    aliasMap.forEach((hasOffset, alias) => {
+      columns.push(`${alias}_table.value AS ${alias}`);
+      if (hasOffset) {
+        columns.push(`${alias}_table.key AS offset`);
+      }
+    });
+    sql = sql.replace(/SELECT\s+\*/gi, `SELECT ${columns.join(", ")}`);
+  } else {
+    // SELECT句のエイリアス参照を修正（SELECT * でない場合のみ）
+    // json_each()は value と key カラムを返す
+    aliasMap.forEach((hasOffset, alias) => {
+      // 明示的なエイリアス参照: alias -> alias_table.value AS alias
+      sql = sql.replace(
+        new RegExp(`\\b${alias}\\b(?!\\_table)`, "g"),
+        `${alias}_table.value AS ${alias}`
+      );
+
+      // offset -> alias_table.key AS offset (WITH OFFSET の場合)
+      if (hasOffset) {
+        sql = sql.replace(/\boffset\b/gi, `${alias}_table.key AS offset`);
+      }
+    });
+  }
+
+  return sql;
+};

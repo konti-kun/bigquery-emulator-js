@@ -1,7 +1,11 @@
 import { dbSession } from "~/utils/db.server";
 import type { QueryResponse, TableFieldSchema } from "types/query";
 import sqlParser from "node-sql-parser";
-import { array_to_json, bigquery_to_sqlite_types } from "~/utils/changer";
+import {
+  array_to_json,
+  bigquery_to_sqlite_types,
+  unnest_to_json_each,
+} from "~/utils/changer";
 import type { JobConfigurationQuery } from "types/job";
 import { parseISO } from "date-fns";
 
@@ -177,21 +181,43 @@ export function executeQuery(
   jobResponse: QueryResponse
 ): QueryResponse {
   try {
+    // UNNESTをjson_each()に変換（BigQueryのSQL文字列を先に変換）
+    let modifiedQuery = unnest_to_json_each(query);
+
     const parser = new sqlParser.Parser();
-    let ast = parser.astify(query, { database: "BigQuery" });
+    let ast = parser.astify(modifiedQuery, { database: "BigQuery" });
     ast = array_to_json(ast);
     ast = bigquery_to_sqlite_types(ast);
     const sqlQuery = parser.sqlify(ast, { database: "sqlite" });
 
     console.log("SQL Query:", sqlQuery);
-    const sqlParams =
-      queryParameters?.map((p) => ({ [p.name!]: p.parameterValue.value })) ||
-      [];
+    console.log("SQL Parameters:", JSON.stringify(queryParameters, null, 2));
+
+    // パラメータを単一のオブジェクトに統合し、配列をJSON文字列に変換
+    const sqlParams = (queryParameters || []).reduce((acc, p) => {
+      let value = p.parameterValue.value;
+
+      // 配列パラメータの場合、JSON文字列に変換
+      if (p.parameterValue.arrayValues) {
+        // arrayValuesの各要素から実際の値を抽出
+        const arrayData = p.parameterValue.arrayValues.map((item: any) =>
+          item.value ?? item
+        );
+        value = JSON.stringify(arrayData);
+      }
+      // 構造体パラメータの場合もJSON文字列に変換
+      else if (p.parameterValue.structValues) {
+        value = JSON.stringify(p.parameterValue.structValues);
+      }
+
+      acc[p.name!] = value;
+      return acc;
+    }, {} as Record<string, any>);
 
     console.log("SQL Parameters:", sqlParams);
     const result = dbSession()
       .prepare(sqlQuery)
-      .all(...sqlParams) as Record<string, any>[];
+      .all(sqlParams) as Record<string, any>[];
 
     console.log("Query Result:", result);
 
