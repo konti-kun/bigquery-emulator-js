@@ -7,7 +7,32 @@ import type { Job } from "types/job";
 import { executeQuery } from "~/utils/query-executor";
 
 export function loader({ params }: Route.LoaderArgs) {
-  return Response.json({ kind: "bigquery#job", id: params.jobId } as any);
+  const response: Job = {
+    kind: "bigquery#job",
+    etag: "etag-placeholder",
+    id: params.jobId!,
+    jobReference: {
+      jobId: params.jobId!,
+      projectId: params.projectId!,
+      location: "US",
+    },
+    configuration: {
+      jobType: "QUERY",
+      query: {
+        query: "",
+        useLegacySql: false,
+      },
+    },
+    statistics: {
+      creationTime: new Date().getTime().toString(),
+      startTime: new Date().getTime().toString(),
+      endTime: new Date().getTime().toString(),
+    },
+    selfLink: `https://bigquery.googleapis.com/bigquery/v2/projects/${params.projectId}/jobs/${params.jobId}`,
+    user_email: "<user_email>",
+    status: { state: "DONE" },
+  };
+  return Response.json(response);
 }
 
 export const action = async ({ request, params }: Route.ActionArgs) => {
