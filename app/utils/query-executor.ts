@@ -216,21 +216,22 @@ export function executeQuery(
       },
       {} as Record<string, any>
     );
-
     let result: Record<string, any>[] = [];
-    switch ((ast as any)?.type) {
-      case "insert":
-      case "update":
-      case "delete":
-        dbSession().prepare(sqlQuery).run(sqlParams);
-        break;
-      case "select":
-        result = dbSession().prepare(sqlQuery).all(sqlParams) as Record<
-          string,
-          any
-        >[];
-        break;
-    }
+    sqlQuery.split(";").forEach((queryPart, index) => {
+      switch ((ast as any)?.type || (ast as any)[index]?.type) {
+        case "insert":
+        case "update":
+        case "delete":
+          dbSession().prepare(queryPart).run(sqlParams);
+          break;
+        case "select":
+          result = dbSession().prepare(queryPart).all(sqlParams) as Record<
+            string,
+            any
+          >[];
+          break;
+      }
+    });
 
     console.log("Query Result:", result);
 
