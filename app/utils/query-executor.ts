@@ -194,30 +194,43 @@ export function executeQuery(
     console.log("SQL Parameters:", JSON.stringify(queryParameters, null, 2));
 
     // パラメータを単一のオブジェクトに統合し、配列をJSON文字列に変換
-    const sqlParams = (queryParameters || []).reduce((acc, p) => {
-      let value = p.parameterValue.value;
+    const sqlParams = (queryParameters || []).reduce(
+      (acc, p) => {
+        let value = p.parameterValue.value;
 
-      // 配列パラメータの場合、JSON文字列に変換
-      if (p.parameterValue.arrayValues) {
-        // arrayValuesの各要素から実際の値を抽出
-        const arrayData = p.parameterValue.arrayValues.map((item: any) =>
-          item.value ?? item
-        );
-        value = JSON.stringify(arrayData);
-      }
-      // 構造体パラメータの場合もJSON文字列に変換
-      else if (p.parameterValue.structValues) {
-        value = JSON.stringify(p.parameterValue.structValues);
-      }
+        // 配列パラメータの場合、JSON文字列に変換
+        if (p.parameterValue.arrayValues) {
+          // arrayValuesの各要素から実際の値を抽出
+          const arrayData = p.parameterValue.arrayValues.map(
+            (item: any) => item.value ?? item
+          );
+          value = JSON.stringify(arrayData);
+        }
+        // 構造体パラメータの場合もJSON文字列に変換
+        else if (p.parameterValue.structValues) {
+          value = JSON.stringify(p.parameterValue.structValues);
+        }
 
-      acc[p.name!] = value;
-      return acc;
-    }, {} as Record<string, any>);
+        acc[p.name!] = value;
+        return acc;
+      },
+      {} as Record<string, any>
+    );
 
-    console.log("SQL Parameters:", sqlParams);
-    const result = dbSession()
-      .prepare(sqlQuery)
-      .all(sqlParams) as Record<string, any>[];
+    let result: Record<string, any>[] = [];
+    switch ((ast as any)?.type) {
+      case "insert":
+      case "update":
+      case "delete":
+        dbSession().prepare(sqlQuery).run(sqlParams);
+        break;
+      case "select":
+        result = dbSession().prepare(sqlQuery).all(sqlParams) as Record<
+          string,
+          any
+        >[];
+        break;
+    }
 
     console.log("Query Result:", result);
 
