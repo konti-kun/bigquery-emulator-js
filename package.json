@@ -6,7 +6,7 @@
     "build": "react-router build",
     "dev": "react-router dev --host 0.0.0.0 --port 9050",
     "test": "vitest --watch --run --maxWorkers 1 --minWorkers 1",
-    "start": "react-router-serve ./build/server/index.js",
+    "start": "PORT=9050 HOST=0.0.0.0 react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc"
   },
   "dependencies": {
