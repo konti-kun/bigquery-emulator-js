@@ -1,0 +1,9 @@
+version: '3'
+services:
+  bigquery-emulator-js:
+    image: ghcr.io/konti-kun/bigquery-emulator-js:latest
+    container_name: bigquery-emulator-js
+    ports:
+      - 9050:9050
+    volumes:
+      - ./data:/data
