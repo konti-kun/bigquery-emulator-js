@@ -96,6 +96,177 @@ function processResultRows(
 }
 
 /**
+ * CTEやサブクエリから列のスキーマを取得
+ */
+function getSchemaFromCTE(
+  columnName: string,
+  ast: any
+): TableFieldSchema | null {
+  // WITH句を確認
+  if (ast?.with) {
+    for (const cte of ast.with) {
+      // cte.stmt.ast.columns にアクセス
+      const columns = cte.stmt?.ast?.columns || cte.stmt?.columns;
+      if (columns) {
+        // CTEの中から列を探す
+        for (let i = 0; i < columns.length; i++) {
+          const col = columns[i];
+          const colName = col.as || `f${i}_`;
+          if (colName === columnName && col.expr) {
+            const inferredType = inferTypeFromExpr(col.expr);
+            if (inferredType) {
+              return { name: columnName, ...inferredType };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // サブクエリを確認（FROM句内）
+  if (ast?.from) {
+    for (const fromItem of ast.from) {
+      if (fromItem.expr?.type === "select" && fromItem.expr.columns) {
+        for (let i = 0; i < fromItem.expr.columns.length; i++) {
+          const col = fromItem.expr.columns[i];
+          const colName = col.as || `f${i}_`;
+          if (colName === columnName && col.expr) {
+            const inferredType = inferTypeFromExpr(col.expr);
+            if (inferredType) {
+              return { name: columnName, ...inferredType };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * AST式から型を推論
+ */
+function inferTypeFromExpr(expr: any): {
+  type: string;
+  mode: string;
+} | null {
+  if (!expr) return null;
+
+  // リテラル値からの推論
+  switch (expr.type) {
+    case "number":
+      return Number.isInteger(expr.value)
+        ? { type: "INTEGER", mode: "NULLABLE" }
+        : { type: "FLOAT", mode: "NULLABLE" };
+    case "bool":
+      return { type: "BOOL", mode: "NULLABLE" };
+    case "single_quote_string":
+    case "string":
+      return { type: "STRING", mode: "NULLABLE" };
+    case "timestamp":
+      return { type: "TIMESTAMP", mode: "NULLABLE" };
+  }
+
+  // CAST式からの推論
+  if (expr.type === "cast" && expr.target?.[0]?.dataType) {
+    let dataType = expr.target[0].dataType.toUpperCase();
+    // 型の正規化: BigQueryの型名をエミュレータの型名に変換
+    switch (dataType) {
+      case "TEXT":
+        dataType = "STRING";
+        break;
+      case "INT64":
+      case "INT":
+        dataType = "INTEGER";
+        break;
+      case "FLOAT64":
+      case "NUMERIC":
+      case "DECIMAL":
+        dataType = "FLOAT";
+        break;
+    }
+    return { type: dataType, mode: "NULLABLE" };
+  }
+
+  // 関数からの推論
+  if (expr.type === "function") {
+    // 関数名の取得（name.schema.value または name.name[0].value）
+    const funcName = (
+      expr.name?.schema?.value ||
+      expr.name?.name?.[0]?.value ||
+      ""
+    ).toUpperCase();
+
+    switch (funcName) {
+      case "TIMESTAMP":
+      case "TIMESTAMP_TRUNC":
+        return { type: "TIMESTAMP", mode: "NULLABLE" };
+      case "DATE":
+        return { type: "DATE", mode: "NULLABLE" };
+      case "FORMAT_TIMESTAMP":
+      case "CONCAT":
+        return { type: "STRING", mode: "NULLABLE" };
+      case "COUNT":
+      case "SUM":
+        return { type: "INTEGER", mode: "NULLABLE" };
+      case "AVG":
+        return { type: "FLOAT", mode: "NULLABLE" };
+      case "JSON_ARRAY":
+        // json_array は配列に変換されたもの
+        // 引数の型から要素の型を推論
+        if (expr.args?.value?.[0]) {
+          const elementType = inferTypeFromExpr(expr.args.value[0]);
+          if (elementType) {
+            return { type: elementType.type, mode: "REPEATED" };
+          }
+        }
+        return { type: "STRING", mode: "REPEATED" };
+    }
+  }
+
+  // 配列からの推論
+  if (expr.type === "array" && expr.array_path) {
+    // 配列の最初の要素から型を推論
+    if (expr.array_path.length > 0) {
+      const firstElement = expr.array_path[0].expr;
+      const elementType = inferTypeFromExpr(firstElement);
+      if (elementType) {
+        return { type: elementType.type, mode: "REPEATED" };
+      }
+    }
+    return { type: "STRING", mode: "REPEATED" };
+  }
+
+  // 演算式からの推論
+  if (expr.type === "binary_expr") {
+    const leftType = inferTypeFromExpr(expr.left);
+    const rightType = inferTypeFromExpr(expr.right);
+
+    // 両方の型が同じ場合はその型を返す
+    if (leftType && rightType && leftType.type === rightType.type) {
+      return leftType;
+    }
+
+    // どちらかがFLOATの場合はFLOATを返す
+    if (
+      (leftType?.type === "FLOAT" || rightType?.type === "FLOAT") &&
+      (leftType?.type === "FLOAT" || leftType?.type === "INTEGER") &&
+      (rightType?.type === "FLOAT" || rightType?.type === "INTEGER")
+    ) {
+      return { type: "FLOAT", mode: "NULLABLE" };
+    }
+
+    // デフォルトはINTEGER
+    if (leftType?.type === "INTEGER" && rightType?.type === "INTEGER") {
+      return { type: "INTEGER", mode: "NULLABLE" };
+    }
+  }
+
+  return null;
+}
+
+/**
  * スキーマを構築
  */
 function buildSchema(
@@ -106,30 +277,55 @@ function buildSchema(
 ): TableFieldSchema[] {
   const schema: TableFieldSchema[] = [];
 
+  // ASTが配列の場合は最初の要素を使用
+  const actualAst = Array.isArray(ast) ? ast[0] : ast;
+
   keys.forEach((key, index) => {
     const keyName = isNaN(Number(key)) ? key : `f${index}_`;
     const value = processedResult[0]?.[key];
 
-    const column = ast?.columns?.find(
-      (c: any) => c.as === keyName || c.as?.value === keyName
-    );
-    // テーブルスキーマが利用可能な場合はそれを使用
+    // columnを探す: asがnullの場合、column_refの列名と比較
+    const column = actualAst?.columns?.find((c: any) => {
+      if (c.as === keyName || c.as?.value === keyName) return true;
+      // asがnullでcolumn_refの場合、列名を直接比較
+      if (!c.as && c.expr?.type === "column_ref") {
+        const colName = c.expr.column?.expr?.value;
+        return colName === keyName;
+      }
+      return false;
+    });
+
+    // 1. SELECT句のAST式から型を推論（最優先）
+    if (column?.expr) {
+      // column_refの場合は、CTEやサブクエリから型を取得
+      if (column.expr.type === "column_ref") {
+        // column_refの実際の列名を取得
+        const refColumnName = column.expr.column?.expr?.value || keyName;
+        const cteSchema = getSchemaFromCTE(refColumnName, actualAst);
+        if (cteSchema) {
+          schema.push({ ...cteSchema, name: keyName });
+          return;
+        }
+      } else {
+        const inferredType = inferTypeFromExpr(column.expr);
+        if (inferredType) {
+          schema.push({ name: keyName, ...inferredType });
+          return;
+        }
+      }
+    }
+
+    // 2. テーブルスキーマから型を取得（次点）
     const fieldSchema = tableSchema.fields.find((f) => f.name === key);
     if (fieldSchema && (!column || column.expr.type === "column_ref")) {
       schema.push(fieldSchema);
       return;
     }
-    // フォールバック: 型推論
+
+    // 3. フォールバック: 実行結果の値から型推論
     switch (typeof value) {
       case "string":
-        const isTimestamp =
-          column?.expr?.type === "function" &&
-          column?.expr?.name.schema.value.toUpperCase() === "TIMESTAMP";
-        if (isTimestamp) {
-          schema.push({ name: keyName, type: "TIMESTAMP", mode: "NULLABLE" });
-        } else {
-          schema.push({ name: keyName, type: "STRING", mode: "NULLABLE" });
-        }
+        schema.push({ name: keyName, type: "STRING", mode: "NULLABLE" });
         break;
       case "number":
         if (Number.isInteger(value)) {
