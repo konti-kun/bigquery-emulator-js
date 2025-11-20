@@ -1,3 +1,5 @@
+import { format } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import dedent from "dedent";
 import { getBigQueryClient } from "tests/utils";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -28,6 +30,44 @@ describe("query", () => {
       "WITH nums AS (SELECT 1, 2, 3) SELECT * FROM nums"
     );
     expect(response4).toEqual([{ f0_: 1, f1_: 2, f2_: 3 }]);
+  });
+
+  test("ROW_NUMBER() OVER()", async () => {
+    const dataset = bigQuery.dataset("test_dataset");
+    await dataset.create();
+    const table = dataset.table("test_table");
+    await table.create({
+      schema: {
+        fields: [
+          { name: "id", type: "INT64", mode: "REQUIRED" },
+          { name: "name", type: "STRING", mode: "NULLABLE" },
+          { name: "created_at", type: "TIMESTAMP", mode: "NULLABLE" },
+        ],
+      },
+    });
+
+    const [response] = await bigQuery.query(
+      dedent`
+      WITH TestData AS (
+        SELECT 'A' AS category UNION ALL
+        SELECT 'B' UNION ALL
+        SELECT 'A' UNION ALL
+        SELECT 'B' UNION ALL
+        SELECT 'C'
+      )
+      SELECT
+        category,
+        ROW_NUMBER() OVER (ORDER BY category) AS row_num
+      FROM TestData
+      ORDER BY category, row_num`
+    );
+    expect(response).toEqual([
+      { category: "A", row_num: 1 },
+      { category: "A", row_num: 2 },
+      { category: "B", row_num: 3 },
+      { category: "B", row_num: 4 },
+      { category: "C", row_num: 5 },
+    ]);
   });
 
   test("run query with array columns", async () => {
@@ -122,35 +162,45 @@ describe("query", () => {
     }
 
     const [response1] = await bigQuery.query(query);
-    expect(response1).toEqual([{ truncated_day: "2023-12-25 00:00:00" }]);
+    expect(response1).toEqual([
+      { truncated_day: bigQuery.timestamp("2023-12-25 00:00:00") },
+    ]);
   });
 
   test("run query with TIMESTAMP_TRUNC to HOUR", async () => {
     const [response2] = await bigQuery.query(
       "SELECT TIMESTAMP_TRUNC(TIMESTAMP '2023-12-25 10:30:45', HOUR) AS truncated_hour"
     );
-    expect(response2).toEqual([{ truncated_hour: "2023-12-25 10:00:00" }]);
+    expect(response2).toEqual([
+      { truncated_hour: bigQuery.timestamp("2023-12-25 10:00:00") },
+    ]);
   });
 
   test("run query with TIMESTAMP_TRUNC to MINUTE", async () => {
     const [response3] = await bigQuery.query(
       "SELECT TIMESTAMP_TRUNC(TIMESTAMP '2023-12-25 10:30:45', MINUTE) AS truncated_minute"
     );
-    expect(response3).toEqual([{ truncated_minute: "2023-12-25 10:30:00" }]);
+    expect(response3).toEqual([
+      { truncated_minute: bigQuery.timestamp("2023-12-25 10:30:00") },
+    ]);
   });
 
   test("run query with TIMESTAMP_TRUNC to MONTH", async () => {
     const [response4] = await bigQuery.query(
       "SELECT TIMESTAMP_TRUNC(TIMESTAMP '2023-12-25 10:30:45', MONTH) AS truncated_month"
     );
-    expect(response4).toEqual([{ truncated_month: "2023-12-01 00:00:00" }]);
+    expect(response4).toEqual([
+      { truncated_month: bigQuery.timestamp("2023-12-01 00:00:00") },
+    ]);
   });
 
   test("run query with TIMESTAMP_TRUNC to YEAR", async () => {
     const [response5] = await bigQuery.query(
       "SELECT TIMESTAMP_TRUNC(TIMESTAMP '2023-12-25 10:30:45', YEAR) AS truncated_year"
     );
-    expect(response5).toEqual([{ truncated_year: "2023-01-01 00:00:00" }]);
+    expect(response5).toEqual([
+      { truncated_year: bigQuery.timestamp("2023-01-01 00:00:00") },
+    ]);
   });
 
   describe("TIMESTAMP function", () => {
@@ -188,6 +238,156 @@ describe("query", () => {
       expect(response4).toEqual([
         { ts: bigQuery.timestamp("2023-12-25T10:30:45Z") },
       ]);
+    });
+  });
+
+  describe("CURRENT_TIMESTAMP function", () => {
+    test("run query with CURRENT_TIMESTAMP function", async () => {
+      const beforeQuery = new Date();
+      const [response1] = await bigQuery.query(
+        "SELECT CURRENT_TIMESTAMP() AS current_ts"
+      );
+      const afterQuery = new Date();
+
+      // CURRENT_TIMESTAMPの結果がクエリ実行前後の時刻の範囲内にあることを確認
+      expect(response1).toHaveLength(1);
+      expect(response1[0]).toHaveProperty("current_ts");
+
+      const resultTimestamp = new Date(response1[0].current_ts);
+      expect(resultTimestamp.getTime()).toBeGreaterThanOrEqual(
+        beforeQuery.getTime() - 1000
+      ); // 1秒の誤差を許容
+      expect(resultTimestamp.getTime()).toBeLessThanOrEqual(
+        afterQuery.getTime() + 1000
+      );
+    });
+
+    test("run query with CURRENT_TIMESTAMP without parentheses", async () => {
+      const beforeQuery = new Date();
+      const [response2] = await bigQuery.query(
+        "SELECT CURRENT_TIMESTAMP AS current_ts"
+      );
+      const afterQuery = new Date();
+
+      // CURRENT_TIMESTAMPの結果がクエリ実行前後の時刻の範囲内にあることを確認
+      expect(response2).toHaveLength(1);
+      expect(response2[0]).toHaveProperty("current_ts");
+
+      const resultTimestamp = new Date(response2[0].current_ts);
+      expect(resultTimestamp.getTime()).toBeGreaterThanOrEqual(
+        beforeQuery.getTime() - 1000
+      );
+      expect(resultTimestamp.getTime()).toBeLessThanOrEqual(
+        afterQuery.getTime() + 1000
+      );
+    });
+
+    test("run query with multiple CURRENT_TIMESTAMP calls", async () => {
+      const [response3] = await bigQuery.query(
+        "SELECT CURRENT_TIMESTAMP() AS ts1, CURRENT_TIMESTAMP() AS ts2"
+      );
+      // 同じクエリ内の複数のCURRENT_TIMESTAMPは同じ値を返すべき
+      expect(response3).toHaveLength(1);
+      expect(response3[0].ts1).toBe(response3[0].ts2);
+    });
+  });
+
+  describe("DATE function", () => {
+    test("run query with DATE function from year, month, day", async () => {
+      const [response1] = await bigQuery.query(
+        "SELECT DATE(2023, 12, 25) AS date_value"
+      );
+      expect(response1).toEqual([{ date_value: bigQuery.date("2023-12-25") }]);
+    });
+
+    test("run query with DATE function from timestamp", async () => {
+      const [response2] = await bigQuery.query(
+        "SELECT DATE(TIMESTAMP('2023-12-25 10:30:45+00:00')) AS date_value"
+      );
+      expect(response2).toEqual([{ date_value: bigQuery.date("2023-12-25") }]);
+    });
+
+    test("run query with DATE function from date string", async () => {
+      const [response3] = await bigQuery.query(
+        "SELECT DATE('2023-12-25') AS date_value"
+      );
+      expect(response3).toEqual([{ date_value: bigQuery.date("2023-12-25") }]);
+    });
+
+    test("run query with DATE function handling edge cases", async () => {
+      const [response4] = await bigQuery.query(
+        "SELECT DATE(2024, 2, 29) AS leap_year"
+      );
+      expect(response4).toEqual([{ leap_year: bigQuery.date("2024-02-29") }]);
+    });
+
+    test("run query with DATE function handling single digit month and day", async () => {
+      const [response5] = await bigQuery.query(
+        "SELECT DATE(2023, 1, 5) AS date_value"
+      );
+      expect(response5).toEqual([{ date_value: bigQuery.date("2023-01-05") }]);
+    });
+  });
+
+  describe("CURRENT_DATE function", () => {
+    test("run query with CURRENT_DATE function", async () => {
+      const beforeQuery = new Date();
+      const [response1] = await bigQuery.query("SELECT CURRENT_DATE() AS cd");
+      const afterQuery = new Date();
+
+      // CURRENT_DATEの結果がクエリ実行前後の日付の範囲内にあることを確認
+      expect(response1).toHaveLength(1);
+      expect(response1[0]).toHaveProperty("cd");
+
+      // 結果が日付形式であることを確認
+      const resultDate = response1[0].cd;
+
+      // 現在の日付と一致することを確認(タイムゾーンを考慮)
+      const resultParsed = new Date(resultDate.value);
+
+      const beforeDate = new Date(
+        beforeQuery.getFullYear(),
+        beforeQuery.getMonth(),
+        beforeQuery.getDate()
+      );
+      const afterDate = new Date(
+        afterQuery.getFullYear(),
+        afterQuery.getMonth(),
+        afterQuery.getDate()
+      );
+
+      expect(resultParsed.getTime()).toBeGreaterThanOrEqual(
+        beforeDate.getTime() - 86400000
+      ); // 1日の誤差を許容
+      expect(resultParsed.getTime()).toBeLessThanOrEqual(
+        afterDate.getTime() + 86400000
+      );
+    });
+
+    test("run query with CURRENT_DATE without parentheses", async () => {
+      const [response2] = await bigQuery.query("SELECT CURRENT_DATE AS cd");
+
+      // CURRENT_DATEの結果がクエリ実行前後の日付の範囲内にあることを確認
+      expect(response2).toHaveLength(1);
+      expect(response2[0]).toHaveProperty("cd");
+
+      // 結果が日付形式であることを確認
+      const resultDate = response2[0].cd;
+
+      expect(resultDate).toEqual(
+        bigQuery.date(format(new Date(), "yyyy-MM-dd"))
+      );
+    });
+
+    test("run query with CURRENT_DATE calls with params", async () => {
+      const [response3] = await bigQuery.query(
+        "SELECT CURRENT_DATE('Asia/Tokyo') AS d1"
+      );
+      expect(response3).toHaveLength(1);
+      expect(response3[0]).toHaveProperty("d1");
+      // Asia/Tokyoのタイムゾーンで現在の日付を取得
+      const tokyoDate = formatInTimeZone(new Date(), "Asia/Tokyo", "yyyy-MM-dd");
+      expect(response3[0].d1).toEqual(bigQuery.date(tokyoDate));
     });
   });
 

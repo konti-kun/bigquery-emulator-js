@@ -216,6 +216,43 @@ describe("buildSchema - type inference", () => {
         { name: "float_value", type: "FLOAT", mode: "NULLABLE" },
       ]);
     });
+
+    test("should infer NUMERIC from CAST AS NUMERIC", async () => {
+      const response = await fetch(
+        "http://localhost:9050/bigquery/v2/projects/dummy-project/queries",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: "SELECT CAST('123.45' AS NUMERIC) AS numeric_value",
+          }),
+        }
+      );
+      const result = await response.json();
+
+      expect(result.schema.fields).toEqual([
+        { name: "numeric_value", type: "NUMERIC", mode: "NULLABLE" },
+      ]);
+    });
+
+    // TODO: BIGNUMERICはnode-sql-parserがサポートしていないためスキップ
+    test.skip("should infer BIGNUMERIC from CAST AS BIGNUMERIC", async () => {
+      const response = await fetch(
+        "http://localhost:9050/bigquery/v2/projects/dummy-project/queries",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: "SELECT CAST('123.45' AS BIGNUMERIC) AS bignumeric_value",
+          }),
+        }
+      );
+      const result = await response.json();
+
+      expect(result.schema.fields).toEqual([
+        { name: "bignumeric_value", type: "BIGNUMERIC", mode: "NULLABLE" },
+      ]);
+    });
   });
 
   describe("SELECT clause type inference - expressions", () => {
@@ -316,6 +353,47 @@ describe("buildSchema - type inference", () => {
         { name: "id", type: "INT64", mode: "REQUIRED" },
         { name: "name", type: "STRING", mode: "NULLABLE" },
         { name: "created_at", type: "TIMESTAMP", mode: "NULLABLE" },
+      ]);
+    });
+
+    test("should inherit NUMERIC type from table column", async () => {
+      // テーブルを作成
+      const dataset = bigQuery.dataset("test_dataset_numeric");
+      await dataset.create();
+      const table = dataset.table("products");
+      await table.create({
+        schema: {
+          fields: [
+            { name: "id", type: "INT64", mode: "REQUIRED" },
+            { name: "price", type: "NUMERIC", mode: "NULLABLE" },
+          ],
+        },
+      });
+
+      // データを挿入
+      await table.insert([
+        {
+          id: "1",
+          price: "99.99",
+        },
+      ]);
+
+      // クエリを実行してスキーマを確認
+      const response = await fetch(
+        "http://localhost:9050/bigquery/v2/projects/dummy-project/queries",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: "SELECT id, price FROM `test_dataset_numeric.products`",
+          }),
+        }
+      );
+      const result = await response.json();
+
+      expect(result.schema.fields).toEqual([
+        { name: "id", type: "INT64", mode: "REQUIRED" },
+        { name: "price", type: "NUMERIC", mode: "NULLABLE" },
       ]);
     });
 

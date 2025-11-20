@@ -71,6 +71,11 @@ function convertValueByFieldSchema(
     }
   }
 
+  // DATE の場合は文字列として返す（BigQuery APIは DATE を文字列として返す）
+  if (fieldSchema.type === "DATE") {
+    return value;
+  }
+
   return value;
 }
 
@@ -181,10 +186,12 @@ function inferTypeFromExpr(expr: any): {
         dataType = "INTEGER";
         break;
       case "FLOAT64":
-      case "NUMERIC":
-      case "DECIMAL":
         dataType = "FLOAT";
         break;
+      case "DECIMAL":
+        dataType = "NUMERIC";
+        break;
+      // NUMERIC, BIGNUMERIC はそのまま維持
     }
     return { type: dataType, mode: "NULLABLE" };
   }
@@ -203,6 +210,8 @@ function inferTypeFromExpr(expr: any): {
       case "TIMESTAMP_TRUNC":
         return { type: "TIMESTAMP", mode: "NULLABLE" };
       case "DATE":
+      case "CURRENT_DATE":
+      case "DATE_TRUNC":
         return { type: "DATE", mode: "NULLABLE" };
       case "FORMAT_TIMESTAMP":
       case "CONCAT":
@@ -384,7 +393,27 @@ export function executeQuery(
     let ast = parser.astify(modifiedQuery, { database: "BigQuery" });
     ast = array_to_json(ast);
     ast = bigquery_to_sqlite_types(ast);
-    const sqlQuery = parser.sqlify(ast, { database: "sqlite" });
+    let sqlQuery = parser.sqlify(ast, { database: "sqlite" });
+
+    // CURRENT_TIMESTAMP() (引数なし) を CURRENT_TIMESTAMP に置換
+    // 引数がある場合はそのまま（例: CURRENT_TIMESTAMP('Asia/Tokyo')は置換しない）
+    sqlQuery = sqlQuery.replaceAll(
+      /CURRENT_TIMESTAMP\(\s*\)/gi,
+      "CURRENT_TIMESTAMP"
+    );
+    sqlQuery = sqlQuery.replaceAll(
+      /current_timestamp\(\s*\)/gi,
+      "CURRENT_TIMESTAMP"
+    );
+
+    // CURRENT_DATE() (引数なし) を CURRENT_DATE に置換
+    // CURRENT_DATE(引数) の場合は _CURRENT_DATE(引数) に置換してカスタム関数として実行
+    // 注意: node-sql-parserが既に_CURRENT_DATEに変換している可能性があるため、
+    // _で始まらないCURRENT_DATEのみを対象とする
+    sqlQuery = sqlQuery.replaceAll(/(?<!_)CURRENT_DATE\(([^)]+)\)/gi, "_CURRENT_DATE($1)");
+    sqlQuery = sqlQuery.replaceAll(/(?<!_)current_date\(([^)]+)\)/gi, "_CURRENT_DATE($1)");
+    sqlQuery = sqlQuery.replaceAll(/(?<!_)CURRENT_DATE\(\s*\)/gi, "CURRENT_DATE");
+    sqlQuery = sqlQuery.replaceAll(/(?<!_)current_date\(\s*\)/gi, "CURRENT_DATE");
 
     console.log("SQL Query:", sqlQuery);
     console.log("SQL Parameters:", JSON.stringify(queryParameters, null, 2));
@@ -421,6 +450,7 @@ export function executeQuery(
           dbSession().prepare(queryPart).run(sqlParams);
           break;
         case "select":
+          console.log("Executing SELECT query part:", queryPart);
           result = dbSession().prepare(queryPart).all(sqlParams) as Record<
             string,
             any
