@@ -387,41 +387,16 @@ export function executeQuery(
   jobResponse: QueryResponse
 ): QueryResponse {
   try {
-    // COUNTIFをCOUNT(CASE WHEN ... THEN 1 END)に変換
-    // UNNEST変換の前に実行して、エイリアスの置換が正しく行われるようにする
-    // ネストした括弧を扱うため、正規表現は括弧の数をカウントしながら処理
     let modifiedQuery = query;
-    const countifRegex = /COUNTIF\s*\(/gi;
-    let match;
-    while ((match = countifRegex.exec(modifiedQuery)) !== null) {
-      const startIndex = match.index;
-      const openParenIndex = startIndex + match[0].length - 1;
-
-      // 対応する閉じ括弧を見つける
-      let depth = 1;
-      let i = openParenIndex + 1;
-      while (i < modifiedQuery.length && depth > 0) {
-        if (modifiedQuery[i] === '(') depth++;
-        else if (modifiedQuery[i] === ')') depth--;
-        i++;
-      }
-
-      if (depth === 0) {
-        const condition = modifiedQuery.substring(openParenIndex + 1, i - 1);
-        const replacement = `COUNT(CASE WHEN ${condition} THEN 1 END)`;
-        modifiedQuery = modifiedQuery.substring(0, startIndex) + replacement + modifiedQuery.substring(i);
-        // 検索位置をリセット
-        countifRegex.lastIndex = 0;
-      }
-    }
 
     // UNNESTをjson_each()に変換（BigQueryのSQL文字列を先に変換）
     modifiedQuery = unnest_to_json_each(modifiedQuery);
 
+    console.log("Modified Query after UNNEST conversion:", modifiedQuery);
     // .で繋いだテーブル名を`でくくる (例: dataset.table -> `dataset.table`)
     // FROM/JOIN句のテーブル名を処理
     modifiedQuery = modifiedQuery.replace(
-      /\b(FROM|JOIN)\s+([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)\b/gi,
+      /\b(FROM|JOIN|INSERT\sINTO)\s+([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)\b/gi,
       (match, keyword, tableName) => {
         // 既にバッククォートで囲まれている場合はスキップ
         if (modifiedQuery.includes(`\`${tableName}\``)) {
@@ -430,6 +405,7 @@ export function executeQuery(
         return `${keyword} \`${tableName}\``;
       }
     );
+    console.log("Modified Query:", modifiedQuery);
 
     const parser = new sqlParser.Parser();
     let ast = parser.astify(modifiedQuery, { database: "BigQuery" });
@@ -452,10 +428,22 @@ export function executeQuery(
     // CURRENT_DATE(引数) の場合は _CURRENT_DATE(引数) に置換してカスタム関数として実行
     // 注意: node-sql-parserが既に_CURRENT_DATEに変換している可能性があるため、
     // _で始まらないCURRENT_DATEのみを対象とする
-    sqlQuery = sqlQuery.replaceAll(/(?<!_)CURRENT_DATE\(([^)]+)\)/gi, "_CURRENT_DATE($1)");
-    sqlQuery = sqlQuery.replaceAll(/(?<!_)current_date\(([^)]+)\)/gi, "_CURRENT_DATE($1)");
-    sqlQuery = sqlQuery.replaceAll(/(?<!_)CURRENT_DATE\(\s*\)/gi, "CURRENT_DATE");
-    sqlQuery = sqlQuery.replaceAll(/(?<!_)current_date\(\s*\)/gi, "CURRENT_DATE");
+    sqlQuery = sqlQuery.replaceAll(
+      /(?<!_)CURRENT_DATE\(([^)]+)\)/gi,
+      "_CURRENT_DATE($1)"
+    );
+    sqlQuery = sqlQuery.replaceAll(
+      /(?<!_)current_date\(([^)]+)\)/gi,
+      "_CURRENT_DATE($1)"
+    );
+    sqlQuery = sqlQuery.replaceAll(
+      /(?<!_)CURRENT_DATE\(\s*\)/gi,
+      "CURRENT_DATE"
+    );
+    sqlQuery = sqlQuery.replaceAll(
+      /(?<!_)current_date\(\s*\)/gi,
+      "CURRENT_DATE"
+    );
 
     console.log("SQL Query:", sqlQuery);
     console.log("SQL Parameters:", JSON.stringify(queryParameters, null, 2));

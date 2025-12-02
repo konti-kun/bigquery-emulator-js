@@ -30,4 +30,17 @@ export function registerCustomFunctions(db: Database): void {
 
   // Register DATE custom function
   db.function("DATE", { varargs: true }, date);
+
+  // Register COUNTIF as an aggregate function
+  db.aggregate("COUNTIF", {
+    start: () => 0,
+    step: (aggregate: number, condition: any) => {
+      console.log("COUNTIF step called with condition:", condition);
+      if (condition) {
+        aggregate++;
+      }
+      return aggregate;
+    },
+    result: (aggregate: number) => aggregate,
+  });
 }
