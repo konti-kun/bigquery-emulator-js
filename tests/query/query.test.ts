@@ -386,7 +386,11 @@ describe("query", () => {
       expect(response3).toHaveLength(1);
       expect(response3[0]).toHaveProperty("d1");
       // Asia/Tokyoのタイムゾーンで現在の日付を取得
-      const tokyoDate = formatInTimeZone(new Date(), "Asia/Tokyo", "yyyy-MM-dd");
+      const tokyoDate = formatInTimeZone(
+        new Date(),
+        "Asia/Tokyo",
+        "yyyy-MM-dd"
+      );
       expect(response3[0].d1).toEqual(bigQuery.date(tokyoDate));
     });
   });
@@ -517,6 +521,82 @@ describe("query", () => {
         { item: 200, offset: 1 },
         { item: 300, offset: 2 },
       ]);
+    });
+  });
+
+  describe("COUNTIF function", () => {
+    test("run simple COUNTIF with boolean condition", async () => {
+      const [response1] = await bigQuery.query(
+        dedent`
+        WITH TestData AS (
+          SELECT -5 AS x UNION ALL
+          SELECT 3 UNION ALL
+          SELECT -1 UNION ALL
+          SELECT 7 UNION ALL
+          SELECT 0 UNION ALL
+          SELECT -2 UNION ALL
+          SELECT 4
+        )
+        SELECT COUNTIF(x < 0) AS num_negative, COUNTIF(x > 0) AS num_positive
+        FROM TestData`
+      );
+      expect(response1).toEqual([{ num_negative: 3, num_positive: 3 }]);
+    });
+
+    test("run COUNTIF with string comparison", async () => {
+      const [response2] = await bigQuery.query(
+        dedent`
+        WITH TestData AS (
+          SELECT 'story' AS type UNION ALL
+          SELECT 'comment' UNION ALL
+          SELECT 'story' UNION ALL
+          SELECT 'poll' UNION ALL
+          SELECT 'story'
+        )
+        SELECT
+          COUNTIF(type = 'story') AS story_count,
+          COUNTIF(type = 'comment') AS comment_count,
+          COUNTIF(type = 'poll') AS poll_count
+        FROM TestData`
+      );
+      expect(response2).toEqual([
+        { story_count: 3, comment_count: 1, poll_count: 1 },
+      ]);
+    });
+
+    test("run COUNTIF with complex condition", async () => {
+      const [response3] = await bigQuery.query(
+        dedent`
+        WITH TestData AS (
+          SELECT 1 AS id, 1500 AS amount, 'active' AS status UNION ALL
+          SELECT 2, 500, 'active' UNION ALL
+          SELECT 3, 2000, 'inactive' UNION ALL
+          SELECT 4, 1200, 'active' UNION ALL
+          SELECT 5, 300, 'inactive'
+        )
+        SELECT
+          COUNTIF(amount > 1000 AND status = 'active') AS high_value_active
+        FROM TestData`
+      );
+      expect(response3).toEqual([{ high_value_active: 2 }]);
+    });
+
+    test("run COUNTIF with NULL values", async () => {
+      const [response4] = await bigQuery.query(
+        dedent`
+        WITH TestData AS (
+          SELECT 1 AS value UNION ALL
+          SELECT NULL UNION ALL
+          SELECT 2 UNION ALL
+          SELECT NULL UNION ALL
+          SELECT 3
+        )
+        SELECT
+          COUNTIF(value IS NOT NULL) AS non_null_count,
+          COUNTIF(value IS NULL) AS null_count
+        FROM TestData`
+      );
+      expect(response4).toEqual([{ non_null_count: 3, null_count: 2 }]);
     });
   });
 });

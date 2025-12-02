@@ -217,6 +217,7 @@ function inferTypeFromExpr(expr: any): {
       case "CONCAT":
         return { type: "STRING", mode: "NULLABLE" };
       case "COUNT":
+      case "COUNTIF":
       case "SUM":
         return { type: "INTEGER", mode: "NULLABLE" };
       case "AVG":
@@ -386,8 +387,36 @@ export function executeQuery(
   jobResponse: QueryResponse
 ): QueryResponse {
   try {
+    // COUNTIFをCOUNT(CASE WHEN ... THEN 1 END)に変換
+    // UNNEST変換の前に実行して、エイリアスの置換が正しく行われるようにする
+    // ネストした括弧を扱うため、正規表現は括弧の数をカウントしながら処理
+    let modifiedQuery = query;
+    const countifRegex = /COUNTIF\s*\(/gi;
+    let match;
+    while ((match = countifRegex.exec(modifiedQuery)) !== null) {
+      const startIndex = match.index;
+      const openParenIndex = startIndex + match[0].length - 1;
+
+      // 対応する閉じ括弧を見つける
+      let depth = 1;
+      let i = openParenIndex + 1;
+      while (i < modifiedQuery.length && depth > 0) {
+        if (modifiedQuery[i] === '(') depth++;
+        else if (modifiedQuery[i] === ')') depth--;
+        i++;
+      }
+
+      if (depth === 0) {
+        const condition = modifiedQuery.substring(openParenIndex + 1, i - 1);
+        const replacement = `COUNT(CASE WHEN ${condition} THEN 1 END)`;
+        modifiedQuery = modifiedQuery.substring(0, startIndex) + replacement + modifiedQuery.substring(i);
+        // 検索位置をリセット
+        countifRegex.lastIndex = 0;
+      }
+    }
+
     // UNNESTをjson_each()に変換（BigQueryのSQL文字列を先に変換）
-    let modifiedQuery = unnest_to_json_each(query);
+    modifiedQuery = unnest_to_json_each(modifiedQuery);
 
     // .で繋いだテーブル名を`でくくる (例: dataset.table -> `dataset.table`)
     // FROM/JOIN句のテーブル名を処理
