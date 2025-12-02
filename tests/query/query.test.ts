@@ -524,6 +524,83 @@ describe("query", () => {
     });
   });
 
+  describe("COUNT function", () => {
+    test("run COUNT with DISTINCT", async () => {
+      const [response1] = await bigQuery.query(
+        dedent`
+        WITH TestData AS (
+          SELECT 'A' AS column1 UNION ALL
+          SELECT 'B' UNION ALL
+          SELECT 'A' UNION ALL
+          SELECT 'C' UNION ALL
+          SELECT 'B'
+        )
+        SELECT COUNT(DISTINCT column1) AS column1
+        FROM TestData`
+      );
+      expect(response1).toEqual([{ column1: 3 }]);
+    });
+
+    test("run COUNT with DISTINCT and alias", async () => {
+      const [response2] = await bigQuery.query(
+        dedent`
+        WITH TestData AS (
+          SELECT 1 AS id UNION ALL
+          SELECT 2 UNION ALL
+          SELECT 1 UNION ALL
+          SELECT 3 UNION ALL
+          SELECT 2
+        )
+        SELECT COUNT(DISTINCT id) AS unique_count
+        FROM TestData`
+      );
+      expect(response2).toEqual([{ unique_count: 3 }]);
+    });
+
+    test("run COUNT with DISTINCT and NULL values", async () => {
+      const [response3] = await bigQuery.query(
+        dedent`
+        WITH TestData AS (
+          SELECT 'X' AS val UNION ALL
+          SELECT NULL UNION ALL
+          SELECT 'X' UNION ALL
+          SELECT 'Y' UNION ALL
+          SELECT NULL
+        )
+        SELECT COUNT(DISTINCT val) AS distinct_count
+        FROM TestData`
+      );
+      expect(response3).toEqual([{ distinct_count: 2 }]);
+    });
+
+    test("run COUNT with DISTINCT from actual table", async () => {
+      const dataset = bigQuery.dataset("voices");
+      await dataset.create();
+      const table = dataset.table("analyze_AAAA");
+      await table.create({
+        schema: {
+          fields: [
+            { name: "column1", type: "STRING", mode: "NULLABLE" },
+            { name: "column2", type: "INT64", mode: "NULLABLE" },
+          ],
+        },
+      });
+
+      await table.insert([
+        { column1: "A", column2: 1 },
+        { column1: "B", column2: 2 },
+        { column1: "A", column2: 3 },
+        { column1: "C", column2: 4 },
+        { column1: "B", column2: 5 },
+      ]);
+
+      const [response4] = await bigQuery.query(
+        "SELECT count(distinct column1) as column1 FROM voices.analyze_AAAA"
+      );
+      expect(response4).toEqual([{ column1: 3 }]);
+    });
+  });
+
   describe("COUNTIF function", () => {
     test("run simple COUNTIF with boolean condition", async () => {
       const [response1] = await bigQuery.query(

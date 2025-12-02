@@ -396,7 +396,7 @@ export function executeQuery(
     // .で繋いだテーブル名を`でくくる (例: dataset.table -> `dataset.table`)
     // FROM/JOIN句のテーブル名を処理
     modifiedQuery = modifiedQuery.replace(
-      /\b(FROM|JOIN|INSERT\sINTO)\s+([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)\b/gi,
+      /\b(FROM|JOIN|INSERT\sINTO|CREATE\sTABLE)\s+([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)\b/gi,
       (match, keyword, tableName) => {
         // 既にバッククォートで囲まれている場合はスキップ
         if (modifiedQuery.includes(`\`${tableName}\``)) {
@@ -474,6 +474,30 @@ export function executeQuery(
     let result: Record<string, any>[] = [];
     sqlQuery.split(";").forEach((queryPart, index) => {
       switch ((ast as any)?.type || (ast as any)[index]?.type) {
+        case "create":
+          const tableId = queryPart
+            .match(/CREATE\s+TABLE\s+`?([a-zA-Z0-9_]+)`?/i)?.[1]
+            .trim();
+          const datasetId = queryPart
+            .match(
+              /CREATE\s+TABLE\s+`?([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)`?/i
+            )?.[1]
+            .trim();
+          if (tableId) {
+            // スキーマ情報を抽出
+            const fields: TableFieldSchema[] = [];
+
+            dbSession()
+              .prepare(
+                "INSERT INTO tables (table_id, dataset_id, project_id, schema) VALUES (?, ?, ?, ?)"
+              )
+              .run(
+                tableId,
+                datasetId,
+                jobResponse.jobReference.projectId,
+                JSON.stringify(fields)
+              );
+          }
         case "insert":
         case "update":
         case "delete":
@@ -524,8 +548,6 @@ export function executeQuery(
         v: convertArrayToBigQueryFormat(row[key]),
       })),
     }));
-    jobResponse.pageToken = "";
-    jobResponse.errors = [];
   } catch (error) {
     console.error("Query execution error:", error);
     jobResponse.errors = [

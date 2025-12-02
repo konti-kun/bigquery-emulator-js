@@ -17,8 +17,8 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
     location: "US",
     projectId: params.projectId!,
   };
-  response.pageToken = "";
-  response.errors = [];
+  // response.pageToken = "";
+  response.queryId = jobId;
 
   switch (request.method) {
     case "POST": {
