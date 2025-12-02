@@ -389,6 +389,19 @@ export function executeQuery(
     // UNNESTをjson_each()に変換（BigQueryのSQL文字列を先に変換）
     let modifiedQuery = unnest_to_json_each(query);
 
+    // .で繋いだテーブル名を`でくくる (例: dataset.table -> `dataset.table`)
+    // FROM/JOIN句のテーブル名を処理
+    modifiedQuery = modifiedQuery.replace(
+      /\b(FROM|JOIN)\s+([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)\b/gi,
+      (match, keyword, tableName) => {
+        // 既にバッククォートで囲まれている場合はスキップ
+        if (modifiedQuery.includes(`\`${tableName}\``)) {
+          return match;
+        }
+        return `${keyword} \`${tableName}\``;
+      }
+    );
+
     const parser = new sqlParser.Parser();
     let ast = parser.astify(modifiedQuery, { database: "BigQuery" });
     ast = array_to_json(ast);
