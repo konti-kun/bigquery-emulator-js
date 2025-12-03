@@ -394,7 +394,18 @@ export function executeQuery(
 
     console.log("Modified Query after UNNEST conversion:", modifiedQuery);
     // .で繋いだテーブル名を`でくくる (例: dataset.table -> `dataset.table`)
-    // FROM/JOIN句のテーブル名を処理
+    // DELETE文の特殊処理: DELETE FROM table -> DELETE table (node-sql-parserの制限のため)
+    // バッククォートありなし両方に対応
+    modifiedQuery = modifiedQuery.replace(
+      /\bDELETE\s+FROM\s+`?([a-zA-Z0-9_.]+)`?/gi,
+      (_match, tableName) => {
+        // バッククォートを除去してから再度追加
+        const cleanTableName = tableName.replace(/`/g, "");
+        return `DELETE \`${cleanTableName}\``;
+      }
+    );
+
+    // テーブル名を処理
     modifiedQuery = modifiedQuery.replace(
       /\b(FROM|JOIN|INSERT\sINTO|CREATE\sTABLE)\s+([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)\b/gi,
       (match, keyword, tableName) => {
@@ -405,6 +416,7 @@ export function executeQuery(
         return `${keyword} \`${tableName}\``;
       }
     );
+
     console.log("Modified Query:", modifiedQuery);
 
     const parser = new sqlParser.Parser();
@@ -444,6 +456,9 @@ export function executeQuery(
       /(?<!_)current_date\(\s*\)/gi,
       "CURRENT_DATE"
     );
+
+    // DELETE文の修正: node-sql-parserがSQLiteに変換する際にFROMを省略するため、追加する
+    sqlQuery = sqlQuery.replace(/\bDELETE\s+(`[^`]+`)/gi, "DELETE FROM $1");
 
     console.log("SQL Query:", sqlQuery);
     console.log("SQL Parameters:", JSON.stringify(queryParameters, null, 2));
