@@ -8,6 +8,11 @@ import {
 } from "~/utils/changer";
 import type { JobConfigurationQuery } from "types/job";
 import { parseISO } from "date-fns";
+import {
+  convertToTimestamp,
+  convertToDate,
+  convertToDatetime,
+} from "~/utils/temporal-converters";
 
 /**
  * テーブルスキーマをデータベースから取得
@@ -179,6 +184,7 @@ function inferTypeFromExpr(expr: any): {
     // 型の正規化: BigQueryの型名をエミュレータの型名に変換
     switch (dataType) {
       case "TEXT":
+      case "STRING":
         dataType = "STRING";
         break;
       case "INT64":
@@ -191,7 +197,7 @@ function inferTypeFromExpr(expr: any): {
       case "DECIMAL":
         dataType = "NUMERIC";
         break;
-      // NUMERIC, BIGNUMERIC はそのまま維持
+      // NUMERIC, BIGNUMERIC, DATE, DATETIME, TIMESTAMP はそのまま維持
     }
     return { type: dataType, mode: "NULLABLE" };
   }
@@ -461,11 +467,15 @@ export function executeQuery(
     sqlQuery = sqlQuery.replace(/\bDELETE\s+(`[^`]+`)/gi, "DELETE FROM $1");
 
     console.log("SQL Query:", sqlQuery);
-    console.log("SQL Parameters:", JSON.stringify(queryParameters, null, 2));
+    console.log("SQL Parameters (full):", JSON.stringify(queryParameters, null, 2));
 
     // パラメータを単一のオブジェクトに統合し、配列をJSON文字列に変換
     const sqlParams = (queryParameters || []).reduce(
       (acc, p) => {
+        console.log("=== Processing parameter ===");
+        console.log("  Name:", p.name);
+        console.log("  Type:", p.parameterType?.type);
+        console.log("  Original value:", p.parameterValue.value);
         let value = p.parameterValue.value;
 
         // 配列パラメータの場合、JSON文字列に変換
@@ -480,12 +490,35 @@ export function executeQuery(
         else if (p.parameterValue.structValues) {
           value = JSON.stringify(p.parameterValue.structValues);
         }
+        // TIMESTAMP型パラメータの場合
+        else if (p.parameterType?.type === "TIMESTAMP" && value) {
+          const converted = convertToTimestamp(value);
+          if (converted !== null) {
+            value = converted;
+          }
+        }
+        // DATETIME型パラメータの場合
+        else if (p.parameterType?.type === "DATETIME" && value) {
+          const converted = convertToDatetime(value);
+          if (converted !== null) {
+            value = converted;
+          }
+        }
+        // DATE型パラメータの場合
+        else if (p.parameterType?.type === "DATE" && value) {
+          const converted = convertToDate(value);
+          if (converted !== null) {
+            value = converted;
+          }
+        }
 
+        console.log("  Converted value:", value);
         acc[p.name!] = value;
         return acc;
       },
       {} as Record<string, any>
     );
+    console.log("Final SQL Params:", sqlParams);
     let result: Record<string, any>[] = [];
     sqlQuery.split(";").forEach((queryPart, index) => {
       switch ((ast as any)?.type || (ast as any)[index]?.type) {

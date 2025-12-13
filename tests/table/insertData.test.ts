@@ -149,6 +149,80 @@ describe("tabledata.insertAll", () => {
     });
   });
 
+  describe("date types", () => {
+    test("insert DATE data - YYYY-MM-DD string", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_date", {
+        schema: "id INT64, birth_date DATE",
+        location: "US",
+      });
+
+      const table = bigQuery.dataset("test_dataset").table("test_table_date");
+
+      // Insert date data
+      await table.insert([
+        { id: 1, birth_date: "2023-12-25" },
+        { id: 2, birth_date: "1990-01-01" },
+      ]);
+
+      // Query to verify - should be stored as YYYY-MM-DD
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_date` ORDER BY id",
+      });
+
+      expect(rows).toEqual([
+        { id: 1, birth_date: bigQuery.date("2023-12-25") },
+        { id: 2, birth_date: bigQuery.date("1990-01-01") },
+      ]);
+    });
+
+    test("insert DATE data - Date object", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_date2", {
+        schema: "id INT64, event_date DATE",
+        location: "US",
+      });
+
+      const table = bigQuery.dataset("test_dataset").table("test_table_date2");
+
+      // Insert date data as Date object
+      const testDate = new Date("2024-06-15T00:00:00Z");
+      await table.insert([{ id: 1, event_date: testDate }]);
+
+      // Query to verify
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_date2`",
+      });
+
+      expect(rows).toEqual([{ id: 1, event_date: bigQuery.date("2024-06-15") }]);
+    });
+
+    test("insert DATE data with null value", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_date_null", {
+        schema: "id INT64, event_date DATE",
+        location: "US",
+      });
+
+      const table = bigQuery
+        .dataset("test_dataset")
+        .table("test_table_date_null");
+
+      // Insert with null date
+      await table.insert([{ id: 1, event_date: null }]);
+
+      // Query to verify
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_date_null`",
+      });
+
+      expect(rows).toEqual([{ id: 1, event_date: null }]);
+    });
+  });
+
   describe("timestamp and datetime types", () => {
     test("insert TIMESTAMP data - ISO8601 string with Z", async () => {
       const bigQuery = getBigQueryClient();
