@@ -230,6 +230,11 @@ function inferTypeFromExpr(expr: any): {
       case "SUM":
         return { type: "INTEGER", mode: "NULLABLE" };
       case "AVG":
+      case "SAFE_ADD":
+      case "SAFE_SUBTRACT":
+      case "SAFE_MULTIPLY":
+      case "SAFE_DIVIDE":
+      case "SAFE_NEGATE":
         return { type: "FLOAT", mode: "NULLABLE" };
       case "JSON_ARRAY":
         // json_array は配列に変換されたもの

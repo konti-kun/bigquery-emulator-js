@@ -8,6 +8,11 @@ import { currentTimestamp } from "./currentTimestamp";
 import { currentDate } from "./currentDate";
 import { dateAdd } from "./dateAdd";
 import { dateSub } from "./dateSub";
+import { safeAdd } from "./safeAdd";
+import { safeSubtract } from "./safeSubtract";
+import { safeMultiply } from "./safeMultiply";
+import { safeDivide } from "./safeDivide";
+import { safeNegate } from "./safeNegate";
 
 /**
  * Register all BigQuery custom functions to the database
@@ -42,6 +47,21 @@ export function registerCustomFunctions(db: Database): void {
 
   // Register DATE_SUB custom function
   db.function("DATE_SUB", { varargs: true }, dateSub);
+
+  // Register SAFE_ADD custom function
+  db.function("SAFE_ADD", { varargs: true }, safeAdd);
+
+  // Register SAFE_SUBTRACT custom function
+  db.function("SAFE_SUBTRACT", { varargs: true }, safeSubtract);
+
+  // Register SAFE_MULTIPLY custom function
+  db.function("SAFE_MULTIPLY", { varargs: true }, safeMultiply);
+
+  // Register SAFE_DIVIDE custom function
+  db.function("SAFE_DIVIDE", { varargs: true }, safeDivide);
+
+  // Register SAFE_NEGATE custom function
+  db.function("SAFE_NEGATE", { varargs: true }, safeNegate);
 
   // Register COUNTIF as an aggregate function
   db.aggregate("COUNTIF", {
