@@ -795,6 +795,78 @@ describe("query", () => {
     });
   });
 
+  describe("DATE_ADD and DATE_SUB functions", () => {
+    test("run query with DATE_ADD adding days", async () => {
+      const [response1] = await bigQuery.query(
+        "SELECT DATE_ADD(DATE '2024-01-15', INTERVAL 10 DAY) AS result_date"
+      );
+      expect(response1).toEqual([{ result_date: bigQuery.date("2024-01-25") }]);
+    });
+
+    test("run query with DATE_ADD adding months", async () => {
+      const [response2] = await bigQuery.query(
+        "SELECT DATE_ADD(DATE '2024-01-15', INTERVAL 2 MONTH) AS result_date"
+      );
+      expect(response2).toEqual([{ result_date: bigQuery.date("2024-03-15") }]);
+    });
+
+    test("run query with DATE_ADD adding years", async () => {
+      const [response3] = await bigQuery.query(
+        "SELECT DATE_ADD(DATE '2024-01-15', INTERVAL 1 YEAR) AS result_date"
+      );
+      expect(response3).toEqual([{ result_date: bigQuery.date("2025-01-15") }]);
+    });
+
+    test("run query with DATE_ADD crossing year boundary", async () => {
+      const [response4] = await bigQuery.query(
+        "SELECT DATE_ADD(DATE '2024-12-25', INTERVAL 10 DAY) AS result_date"
+      );
+      expect(response4).toEqual([{ result_date: bigQuery.date("2025-01-04") }]);
+    });
+
+    test("run query with DATE_SUB subtracting days", async () => {
+      const [response5] = await bigQuery.query(
+        "SELECT DATE_SUB(DATE '2024-01-25', INTERVAL 10 DAY) AS result_date"
+      );
+      expect(response5).toEqual([{ result_date: bigQuery.date("2024-01-15") }]);
+    });
+
+    test("run query with DATE_SUB subtracting months", async () => {
+      const [response6] = await bigQuery.query(
+        "SELECT DATE_SUB(DATE '2024-03-15', INTERVAL 2 MONTH) AS result_date"
+      );
+      expect(response6).toEqual([{ result_date: bigQuery.date("2024-01-15") }]);
+    });
+
+    test("run query with DATE_SUB subtracting years", async () => {
+      const [response7] = await bigQuery.query(
+        "SELECT DATE_SUB(DATE '2025-01-15', INTERVAL 1 YEAR) AS result_date"
+      );
+      expect(response7).toEqual([{ result_date: bigQuery.date("2024-01-15") }]);
+    });
+
+    test("run query with DATE_SUB crossing year boundary", async () => {
+      const [response8] = await bigQuery.query(
+        "SELECT DATE_SUB(DATE '2024-01-05', INTERVAL 10 DAY) AS result_date"
+      );
+      expect(response8).toEqual([{ result_date: bigQuery.date("2023-12-26") }]);
+    });
+
+    test("run query with DATE_ADD using string date", async () => {
+      const [response9] = await bigQuery.query(
+        "SELECT DATE_ADD('2024-06-15', INTERVAL 7 DAY) AS result_date"
+      );
+      expect(response9).toEqual([{ result_date: bigQuery.date("2024-06-22") }]);
+    });
+
+    test("run query with DATE_SUB using string date", async () => {
+      const [response10] = await bigQuery.query(
+        "SELECT DATE_SUB('2024-06-15', INTERVAL 7 DAY) AS result_date"
+      );
+      expect(response10).toEqual([{ result_date: bigQuery.date("2024-06-08") }]);
+    });
+  });
+
   describe("DATE type in WHERE clause", () => {
     beforeEach(async () => {
       // events.daily_logs テーブル
