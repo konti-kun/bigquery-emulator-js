@@ -218,6 +218,8 @@ function inferTypeFromExpr(expr: any): {
       case "DATE":
       case "CURRENT_DATE":
       case "DATE_TRUNC":
+      case "DATE_ADD":
+      case "DATE_SUB":
         return { type: "DATE", mode: "NULLABLE" };
       case "FORMAT_TIMESTAMP":
       case "FORMAT_DATE":
@@ -398,6 +400,16 @@ export function executeQuery(
 
     // UNNESTをjson_each()に変換（BigQueryのSQL文字列を先に変換）
     modifiedQuery = unnest_to_json_each(modifiedQuery);
+
+    // DATE_ADD/DATE_SUB with INTERVAL syntax conversion
+    // Convert: DATE_ADD(date_expression, INTERVAL int64_expression date_part)
+    // To: DATE_ADD(date_expression, int64_expression, 'date_part')
+    modifiedQuery = modifiedQuery.replace(
+      /\b(DATE_ADD|DATE_SUB)\s*\(\s*([^,]+?)\s*,\s*INTERVAL\s+(\d+)\s+(\w+)\s*\)/gi,
+      (_match, funcName, dateExpr, intervalValue, datePart) => {
+        return `${funcName}(${dateExpr}, ${intervalValue}, '${datePart}')`;
+      }
+    );
 
     console.log("Modified Query after UNNEST conversion:", modifiedQuery);
     // .で繋いだテーブル名を`でくくる (例: dataset.table -> `dataset.table`)

@@ -6,6 +6,8 @@ import { timestamp } from "./timestamp";
 import { date } from "./date";
 import { currentTimestamp } from "./currentTimestamp";
 import { currentDate } from "./currentDate";
+import { dateAdd } from "./dateAdd";
+import { dateSub } from "./dateSub";
 
 /**
  * Register all BigQuery custom functions to the database
@@ -34,6 +36,12 @@ export function registerCustomFunctions(db: Database): void {
 
   // Register DATE custom function
   db.function("DATE", { varargs: true }, date);
+
+  // Register DATE_ADD custom function
+  db.function("DATE_ADD", { varargs: true }, dateAdd);
+
+  // Register DATE_SUB custom function
+  db.function("DATE_SUB", { varargs: true }, dateSub);
 
   // Register COUNTIF as an aggregate function
   db.aggregate("COUNTIF", {
