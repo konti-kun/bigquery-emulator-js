@@ -220,6 +220,7 @@ function inferTypeFromExpr(expr: any): {
       case "DATE_TRUNC":
         return { type: "DATE", mode: "NULLABLE" };
       case "FORMAT_TIMESTAMP":
+      case "FORMAT_DATE":
       case "CONCAT":
         return { type: "STRING", mode: "NULLABLE" };
       case "COUNT":

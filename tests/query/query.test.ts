@@ -142,6 +142,27 @@ describe("query", () => {
     expect(response3).toEqual([{ formatted_with_tz: "2023-12-25 19:30:00" }]);
   });
 
+  test("run query with FORMAT_DATE", async () => {
+    const [response1] = await bigQuery.query(
+      "SELECT FORMAT_DATE('%Y-%m-%d', DATE '2023-12-25') AS formatted_date"
+    );
+    expect(response1).toEqual([{ formatted_date: "2023-12-25" }]);
+  });
+
+  test("run query with FORMAT_DATE with custom format", async () => {
+    const [response2] = await bigQuery.query(
+      "SELECT FORMAT_DATE('%Y/%m/%d', DATE '2023-12-25') AS formatted_date"
+    );
+    expect(response2).toEqual([{ formatted_date: "2023/12/25" }]);
+  });
+
+  test("run query with FORMAT_DATE with year and month only", async () => {
+    const [response3] = await bigQuery.query(
+      "SELECT FORMAT_DATE('%Y-%m', DATE '2023-12-25') AS formatted_date"
+    );
+    expect(response3).toEqual([{ formatted_date: "2023-12" }]);
+  });
+
   test("run query with TIMESTAMP_TRUNC to DAY", async () => {
     const query =
       "SELECT TIMESTAMP_TRUNC(TIMESTAMP '2023-12-25 10:30:45', DAY) AS truncated_day";

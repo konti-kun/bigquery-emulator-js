@@ -52,6 +52,14 @@ const traverseAndConvertTypes = (node: any): any => {
     };
   }
 
+  // DATEリテラルを文字列に変換
+  if (node.type === "date") {
+    return {
+      type: "single_quote_string",
+      value: node.value,
+    };
+  }
+
   // TIMESTAMP_TRUNC関数の処理
   if (node.type === "function" && node.name) {
     const funcName = Array.isArray(node.name.name)
