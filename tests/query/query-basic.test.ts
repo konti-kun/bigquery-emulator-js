@@ -80,9 +80,9 @@ describe("query - basic", () => {
       SELECT * FROM Sequences`
     );
     expect(response1).toEqual([
-      { some_numbers: "[0,1,2]" },
-      { some_numbers: "[2,4,8,16,32]" },
-      { some_numbers: "[5,10]" },
+      { some_numbers: [0, 1, 2] },
+      { some_numbers: [2, 4, 8, 16, 32] },
+      { some_numbers: [5, 10] },
     ]);
   });
 
@@ -116,5 +116,16 @@ describe("query - basic", () => {
       { item: "2", count: 1 },
       { item: "N/A", count: 1 },
     ]);
+  });
+
+  test("run query with boolean type", async () => {
+    const [response1] = await bigQuery.query(
+      dedent`
+      WITH TestData AS (
+        SELECT TRUE AS bool_value, 1 = 1 AS bool_value2
+      )
+      SELECT bool_value, bool_value2 FROM TestData`
+    );
+    expect(response1).toEqual([{ bool_value: true, bool_value2: true }]);
   });
 });

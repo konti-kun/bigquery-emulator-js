@@ -94,6 +94,14 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
         return convertToDate(value);
       }
 
+      if (field?.type === "BOOLEAN") {
+        // Convert to boolean
+        if (typeof value === "string") {
+          return value.toLowerCase() === "true" ? 1 : 0;
+        }
+        return Boolean(value) ? 1 : 0;
+      }
+
       // Handle arrays and objects (JSON types)
       if (typeof value === "object") {
         return JSON.stringify(value);

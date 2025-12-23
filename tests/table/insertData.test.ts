@@ -196,16 +196,20 @@ describe("tabledata.insertAll", () => {
         query: "SELECT * FROM `test_dataset.test_table_date2`",
       });
 
-      expect(rows).toEqual([{ id: 1, event_date: bigQuery.date("2024-06-15") }]);
+      expect(rows).toEqual([
+        { id: 1, event_date: bigQuery.date("2024-06-15") },
+      ]);
     });
 
     test("insert DATE data with null value", async () => {
       const bigQuery = getBigQueryClient();
       await bigQuery.createDataset("test_dataset");
-      await bigQuery.dataset("test_dataset").createTable("test_table_date_null", {
-        schema: "id INT64, event_date DATE",
-        location: "US",
-      });
+      await bigQuery
+        .dataset("test_dataset")
+        .createTable("test_table_date_null", {
+          schema: "id INT64, event_date DATE",
+          location: "US",
+        });
 
       const table = bigQuery
         .dataset("test_dataset")
@@ -392,6 +396,120 @@ describe("tabledata.insertAll", () => {
       });
 
       expect(rows).toEqual([{ id: 1, event_time: null }]);
+    });
+  });
+
+  describe("boolean type", () => {
+    test("insert BOOLEAN data - boolean values", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_bool", {
+        schema: "id INT64, is_active BOOLEAN, is_verified BOOLEAN",
+        location: "US",
+      });
+
+      const table = bigQuery.dataset("test_dataset").table("test_table_bool");
+
+      // Insert boolean data
+      await table.insert([
+        { id: 1, is_active: true, is_verified: false },
+        { id: 2, is_active: false, is_verified: true },
+      ]);
+
+      // Query to verify - should return as boolean
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_bool` ORDER BY id",
+      });
+
+      expect(rows).toEqual([
+        { id: 1, is_active: true, is_verified: false },
+        { id: 2, is_active: false, is_verified: true },
+      ]);
+    });
+
+    test("insert BOOLEAN data - string values", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_bool2", {
+        schema: "id INT64, flag BOOLEAN",
+        location: "US",
+      });
+
+      const table = bigQuery.dataset("test_dataset").table("test_table_bool2");
+
+      // Insert boolean data as string
+      await table.insert([
+        { id: 1, flag: true },
+        { id: 2, flag: false },
+      ]);
+
+      // Query to verify - should convert to boolean
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_bool2` ORDER BY id",
+      });
+
+      expect(rows).toEqual([
+        { id: 1, flag: true },
+        { id: 2, flag: false },
+      ]);
+    });
+
+    test("insert BOOLEAN data - numeric values", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery.dataset("test_dataset").createTable("test_table_bool3", {
+        schema: "id INT64, status BOOLEAN",
+        location: "US",
+      });
+
+      const table = bigQuery.dataset("test_dataset").table("test_table_bool3");
+
+      // Insert boolean data as number (0 = false, non-zero = true)
+      await table.insert([
+        { id: 1, status: 1 },
+        { id: 2, status: 0 },
+      ]);
+
+      // Query to verify
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_bool3` ORDER BY id",
+      });
+
+      expect(rows).toEqual([
+        { id: 1, status: true },
+        { id: 2, status: false },
+      ]);
+    });
+
+    test("insert BOOLEAN data with null value", async () => {
+      const bigQuery = getBigQueryClient();
+      await bigQuery.createDataset("test_dataset");
+      await bigQuery
+        .dataset("test_dataset")
+        .createTable("test_table_bool_null", {
+          schema: "id INT64, flag BOOLEAN",
+          location: "US",
+        });
+
+      const table = bigQuery
+        .dataset("test_dataset")
+        .table("test_table_bool_null");
+
+      // Insert with null boolean
+      await table.insert([
+        { id: 1, flag: true },
+        { id: 2, flag: null },
+      ]);
+
+      // Query to verify
+      const [rows] = await bigQuery.query({
+        query: "SELECT * FROM `test_dataset.test_table_bool_null` ORDER BY id",
+      });
+
+      expect(rows).toEqual([
+        { id: 1, flag: true },
+        { id: 2, flag: null },
+      ]);
     });
   });
 

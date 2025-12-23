@@ -45,6 +45,14 @@ export const loader = async ({ params, request }: Route.LoaderArgs) => {
                 : null,
           });
           break;
+        case "BOOLEAN":
+          // BOOLEANは文字列で "true" or "false" で返す
+          if (cellValue !== null && cellValue !== undefined) {
+            processedRow.f.push({ v: cellValue === 1 || cellValue === true ? "true" : "false" });
+          } else {
+            processedRow.f.push({ v: null });
+          }
+          break;
         case "TIMESTAMP":
           // TIMESTAMPはマイクロ秒で返す
           if (cellValue !== null && cellValue !== undefined) {

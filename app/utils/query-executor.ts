@@ -50,7 +50,27 @@ function convertValueByFieldSchema(
   value: any,
   fieldSchema: TableFieldSchema | undefined
 ): any {
-  if (!fieldSchema || typeof value !== "string") {
+  if (!fieldSchema) {
+    return value;
+  }
+
+  // BOOLEAN/BOOL の場合は true/false に変換
+  if (fieldSchema.type === "BOOLEAN" || fieldSchema.type === "BOOL") {
+    // null や undefined の場合はそのまま返す
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value === "number") {
+      return value === 1 ? "true" : "false";
+    }
+    if (typeof value === "string") {
+      return value === "1" || value.toLowerCase() === "true" ? "true" : "false";
+    }
+    return Boolean(value) ? "true" : "false";
+  }
+
+  // 以下の処理は文字列型の値のみが対象
+  if (typeof value !== "string") {
     return value;
   }
 
@@ -162,6 +182,7 @@ function inferTypeFromExpr(expr: any): {
   mode: string;
 } | null {
   if (!expr) return null;
+  console.log("Inferring type from expression:", expr);
 
   // リテラル値からの推論
   switch (expr.type) {
@@ -263,7 +284,36 @@ function inferTypeFromExpr(expr: any): {
   }
 
   // 演算式からの推論
+  console.log("Inferring type from expression:", expr);
   if (expr.type === "binary_expr") {
+    const operator = expr.operator;
+
+    // 比較演算子の場合はBOOL型を返す
+    const comparisonOperators = [
+      "=",
+      ">",
+      "<",
+      ">=",
+      "<=",
+      "!=",
+      "<>",
+      "IS",
+      "IS NOT",
+      "LIKE",
+      "NOT LIKE",
+      "IN",
+      "NOT IN",
+    ];
+    if (comparisonOperators.includes(operator?.toUpperCase?.() || operator)) {
+      return { type: "BOOL", mode: "NULLABLE" };
+    }
+
+    // 論理演算子の場合もBOOL型を返す
+    const logicalOperators = ["AND", "OR"];
+    if (logicalOperators.includes(operator?.toUpperCase?.())) {
+      return { type: "BOOL", mode: "NULLABLE" };
+    }
+
     const leftType = inferTypeFromExpr(expr.left);
     const rightType = inferTypeFromExpr(expr.right);
 
@@ -309,7 +359,7 @@ function buildSchema(
     const value = processedResult[0]?.[key];
 
     // columnを探す: asがnullの場合、column_refの列名と比較
-    const column = actualAst?.columns?.find((c: any) => {
+    let column = actualAst?.columns?.find((c: any) => {
       if (c.as === keyName || c.as?.value === keyName) return true;
       // asがnullでcolumn_refの場合、列名を直接比較
       if (!c.as && c.expr?.type === "column_ref") {
@@ -318,6 +368,34 @@ function buildSchema(
       }
       return false;
     });
+    // columnが見つからない場合、WITH句やFROM句から探す
+    if (!column) {
+      // WITH句から列定義を探す
+      const cteSchema = getSchemaFromCTE(keyName, actualAst);
+      if (cteSchema) {
+        schema.push({ ...cteSchema, name: keyName });
+        return;
+      }
+
+      // サブクエリ（FROM句）から列定義を探す
+      if (actualAst?.from) {
+        for (const fromItem of actualAst.from) {
+          if (fromItem.expr?.type === "select" && fromItem.expr.columns) {
+            for (let i = 0; i < fromItem.expr.columns.length; i++) {
+              const col = fromItem.expr.columns[i];
+              const colName = col.as || `f${i}_`;
+              if (colName === keyName && col.expr) {
+                const inferredType = inferTypeFromExpr(col.expr);
+                if (inferredType) {
+                  schema.push({ name: keyName, ...inferredType });
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
 
     // 1. SELECT句のAST式から型を推論（最優先）
     if (column?.expr) {
@@ -350,6 +428,9 @@ function buildSchema(
     switch (typeof value) {
       case "string":
         schema.push({ name: keyName, type: "STRING", mode: "NULLABLE" });
+        break;
+      case "boolean":
+        schema.push({ name: keyName, type: "BOOLEAN", mode: "NULLABLE" });
         break;
       case "number":
         if (Number.isInteger(value)) {
@@ -485,7 +566,10 @@ export function executeQuery(
     sqlQuery = sqlQuery.replace(/\bDELETE\s+(`[^`]+`)/gi, "DELETE FROM $1");
 
     console.log("SQL Query:", sqlQuery);
-    console.log("SQL Parameters (full):", JSON.stringify(queryParameters, null, 2));
+    console.log(
+      "SQL Parameters (full):",
+      JSON.stringify(queryParameters, null, 2)
+    );
 
     // パラメータを単一のオブジェクトに統合し、配列をJSON文字列に変換
     const sqlParams = (queryParameters || []).reduce(
